@@ -53,6 +53,7 @@ class AuthService {
       throw Exception('Network error: ${e.toString()}');
     }
   }
+
   Future<void> forgotPassword(String email) async {
     try {
       final response = await http.post(
@@ -62,14 +63,53 @@ class AuthService {
       );
 
       if (response.statusCode == 200) {
-        // Password reset link sent successfully
+        // Password reset code sent successfully
         return;
       } else {
         final errorBody = json.decode(response.body);
-        throw Exception(errorBody['message'] ?? 'Failed to send password reset link');
+        throw Exception(errorBody['message'] ?? 'Failed to send password reset code');
+      }
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<bool> validateResetCode(String code) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/auth/validate-reset-code?code=$code'),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to validate code: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<void> resetPassword(String code, String newPassword) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/reset-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'code': code,
+          'newPassword': newPassword,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return;
+      } else {
+        final errorBody = json.decode(response.body);
+        throw Exception(errorBody['message'] ?? 'Failed to reset password');
       }
     } catch (e) {
       throw Exception('Network error: ${e.toString()}');
     }
   }
 }
+

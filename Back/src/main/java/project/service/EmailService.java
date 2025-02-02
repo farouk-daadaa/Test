@@ -13,14 +13,15 @@ public class EmailService {
         this.mailSender = mailSender;
     }
 
-    public void sendPasswordResetEmail(String to, String token) {
+    public void sendPasswordResetEmail(String to, String code) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(fromEmail);
         message.setTo(to);
         message.setSubject("Password Reset Request");
-        message.setText("To reset your password, click the link below:\n\n" +
-                "http://your-frontend-url/reset-password?token=" + token);
+        message.setText("Your password reset code is: " + code + "\n\n" +
+                "Enter this code in the app to reset your password.");
 
         mailSender.send(message);
     }
 }
+

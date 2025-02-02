@@ -4,6 +4,9 @@ import 'package:front/widgets/custom_drawer.dart';
 import 'package:front/screens/home_screen.dart';
 import 'package:front/pages/login_page.dart';
 import 'package:front/pages/signup_page.dart';
+import 'package:front/pages/forgot_password_page.dart';
+import 'package:front/pages/reset_password_page.dart';
+import 'package:front/pages/verify_reset_code_page.dart'; // Add this import
 import 'theme/app_theme.dart';
 
 void main() {
@@ -14,12 +17,22 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'The Bridge',
-      theme: AppTheme.lightTheme,
+      title: 'Your App Name',
+      theme: ThemeData(
+        primarySwatch: Colors.pink,
+        colorScheme: ColorScheme.fromSwatch().copyWith(secondary: Color(0xFFDB2777)),
+      ),
       routes: {
         '/': (context) => MainScreen(),
         '/login': (context) => LoginPage(),
         '/signup': (context) => SignupPage(),
+        '/forgot-password': (context) => ForgotPasswordPage(),
+        '/reset-password': (context) => ResetPasswordPage(
+          token: ModalRoute.of(context)!.settings.arguments as String,
+        ),
+        '/verify-reset-code': (context) => VerifyResetCodePage(
+          email: ModalRoute.of(context)!.settings.arguments as String,
+        ),
       },
       initialRoute: '/',
     );
@@ -36,3 +49,4 @@ class MainScreen extends StatelessWidget {
     );
   }
 }
+

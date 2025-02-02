@@ -8,7 +8,7 @@ import project.repository.PasswordResetTokenRepository;
 import project.repository.UserRepository;
 
 import java.util.Optional;
-import java.util.UUID;
+import java.util.Random;
 
 @Service
 public class PasswordResetService {
@@ -27,8 +27,8 @@ public class PasswordResetService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    // Step 1: Generate token and send email
-    public void sendResetToken(String email) {
+    // Step 1: Generate code and send email
+    public void sendResetCode(String email) {
         Optional<UserEntity> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
             throw new IllegalArgumentException("User not found with email: " + email);
@@ -39,27 +39,26 @@ public class PasswordResetService {
         // Delete any existing token for this user
         tokenRepository.deleteByUser(user);
 
-        // Generate a new token
-        String token = UUID.randomUUID().toString();
-        PasswordResetToken passwordResetToken = new PasswordResetToken(token, user);
+        // Generate a new 6-digit code
+        String code = generateCode();
+        PasswordResetToken passwordResetToken = new PasswordResetToken(code, user);
         tokenRepository.save(passwordResetToken);
 
         // Send reset email
-        emailService.sendPasswordResetEmail(user.getEmail(), token);
+        emailService.sendPasswordResetEmail(user.getEmail(), code);
     }
 
-
-    // Step 2: Validate token
-    public boolean isValidToken(String token) {
-        PasswordResetToken resetToken = tokenRepository.findByToken(token);
+    // Step 2: Validate code
+    public boolean isValidCode(String code) {
+        PasswordResetToken resetToken = tokenRepository.findByToken(code);
         return resetToken != null && !resetToken.isExpired();
     }
 
     // Step 3: Reset password
-    public void resetPassword(String token, String newPassword) {
-        PasswordResetToken resetToken = tokenRepository.findByToken(token);
+    public void resetPassword(String code, String newPassword) {
+        PasswordResetToken resetToken = tokenRepository.findByToken(code);
         if (resetToken == null || resetToken.isExpired()) {
-            throw new IllegalArgumentException("Invalid or expired token.");
+            throw new IllegalArgumentException("Invalid or expired code.");
         }
 
         // Update user password
@@ -70,4 +69,11 @@ public class PasswordResetService {
         // Delete used token
         tokenRepository.delete(resetToken);
     }
+
+    private String generateCode() {
+        Random rnd = new Random();
+        int number = rnd.nextInt(999999);
+        return String.format("%06d", number);
+    }
 }
+

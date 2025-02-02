@@ -3,20 +3,24 @@ import '../widgets/custom_app_bar.dart';
 import '../widgets/sections/footer_section.dart';
 import '../services/auth_service.dart';
 
-class ForgotPasswordPage extends StatefulWidget {
+class VerifyResetCodePage extends StatefulWidget {
+  final String email;
+
+  VerifyResetCodePage({required this.email});
+
   @override
-  _ForgotPasswordPageState createState() => _ForgotPasswordPageState();
+  _VerifyResetCodePageState createState() => _VerifyResetCodePageState();
 }
 
-class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
+class _VerifyResetCodePageState extends State<VerifyResetCodePage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _codeController = TextEditingController();
   final AuthService _authService = AuthService();
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -41,7 +45,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
-                            'Forgot Password',
+                            'Verify Reset Code',
                             style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
@@ -50,7 +54,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           ),
                           SizedBox(height: 8),
                           Text(
-                            'Enter your email to receive a password reset code',
+                            'Enter the code sent to ${widget.email}',
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey[600],
@@ -61,10 +65,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                     ),
                     SizedBox(height: 32),
                     TextFormField(
-                      controller: _emailController,
+                      controller: _codeController,
                       decoration: InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email, color: Color(0xFFDB2777)),
+                        labelText: 'Reset Code',
+                        prefixIcon: Icon(Icons.lock, color: Color(0xFFDB2777)),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -73,13 +77,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           borderSide: BorderSide(color: Color(0xFFDB2777)),
                         ),
                       ),
-                      keyboardType: TextInputType.emailAddress,
+                      keyboardType: TextInputType.number,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter your email';
+                          return 'Please enter the reset code';
                         }
-                        if (!value.contains('@') || !value.contains('.')) {
-                          return 'Please enter a valid email address';
+                        if (value.length != 6) {
+                          return 'Reset code must be 6 digits';
                         }
                         return null;
                       },
@@ -89,7 +93,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                       onPressed: _isLoading ? null : _submitForm,
                       child: _isLoading
                           ? CircularProgressIndicator(color: Colors.white)
-                          : Text('Send Reset Code'),
+                          : Text('Verify Code'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFFDB2777),
                         padding: EdgeInsets.symmetric(vertical: 16),
@@ -104,7 +108,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         Navigator.pop(context);
                       },
                       child: Text(
-                        'Back to Login',
+                        'Back',
                         style: TextStyle(color: Color(0xFFDB2777)),
                       ),
                     ),
@@ -126,14 +130,17 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
       });
 
       try {
-        await _authService.forgotPassword(_emailController.text);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Password reset code sent to ${_emailController.text}'),
-            backgroundColor: Color(0xFFDB2777),
-          ),
-        );
-        Navigator.pushNamed(context, '/verify-reset-code', arguments: _emailController.text);
+        bool isValid = await _authService.validateResetCode(_codeController.text);
+        if (isValid) {
+          Navigator.pushNamed(context, '/reset-password', arguments: _codeController.text);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Invalid or expired code'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -1,16 +1,16 @@
 package project.dto;
 
 public class PasswordResetDTO {
-    private String token;
+    private String code;
     private String newPassword;
 
     // Getters and Setters
-    public String getToken() {
-        return token;
+    public String getCode() {
+        return code;
     }
 
-    public void setToken(String token) {
-        this.token = token;
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public String getNewPassword() {
@@ -21,3 +21,4 @@ public class PasswordResetDTO {
         this.newPassword = newPassword;
     }
 }
+

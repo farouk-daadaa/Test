@@ -18,20 +18,21 @@ public class PasswordResetController {
     // Step 1: Request password reset
     @PostMapping("/forgot-password")
     public ResponseEntity<String> forgotPassword(@RequestBody PasswordResetRequestDTO request) {
-        passwordResetService.sendResetToken(request.getEmail());
-        return ResponseEntity.ok("Password reset link sent to your email.");
+        passwordResetService.sendResetCode(request.getEmail());
+        return ResponseEntity.ok("Password reset code sent to your email.");
     }
 
-    // Step 2: Validate token
-    @GetMapping("/validate-reset-token")
-    public ResponseEntity<Boolean> validateResetToken(@RequestParam("token") String token) {
-        return ResponseEntity.ok(passwordResetService.isValidToken(token));
+    // Step 2: Validate code
+    @GetMapping("/validate-reset-code")
+    public ResponseEntity<Boolean> validateResetCode(@RequestParam("code") String code) {
+        return ResponseEntity.ok(passwordResetService.isValidCode(code));
     }
 
     // Step 3: Reset password
     @PostMapping("/reset-password")
     public ResponseEntity<String> resetPassword(@RequestBody PasswordResetDTO request) {
-        passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
+        passwordResetService.resetPassword(request.getCode(), request.getNewPassword());
         return ResponseEntity.ok("Password successfully reset.");
     }
 }
+

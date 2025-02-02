@@ -5,7 +5,7 @@ class ContactSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.all(24),
-      color: Theme.of(context).primaryColor,
+      color: Color(0xFFDB2777),
       child: Column(
         children: [
           Text(

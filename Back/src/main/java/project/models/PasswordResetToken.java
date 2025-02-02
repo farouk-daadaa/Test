@@ -23,7 +23,7 @@ public class PasswordResetToken {
     public PasswordResetToken(String token, UserEntity user) {
         this.token = token;
         this.user = user;
-        this.expiryDate = LocalDateTime.now().plusHours(24); // Token valid for 24 hours
+        this.expiryDate = LocalDateTime.now().plusMinutes(15); // Code valid for 15 minutes
     }
 
     // Getters and Setters
@@ -63,3 +63,4 @@ public class PasswordResetToken {
         return LocalDateTime.now().isAfter(this.expiryDate);
     }
 }
+
