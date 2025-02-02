@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:front/widgets/custom_app_bar.dart';
 import 'package:front/widgets/custom_drawer.dart';
-import 'screens/home_screen.dart';
+import 'package:front/screens/home_screen.dart';
+import 'package:front/pages/login_page.dart';  // Add this import
+import 'package:front/pages/signup_page.dart'; // Add this import
 import 'theme/app_theme.dart';
 
 void main() {
@@ -14,7 +16,13 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'The Bridge',
       theme: AppTheme.lightTheme,
-      home: MainScreen(),
+      // Define your routes here
+      routes: {
+        '/': (context) => MainScreen(),       // Main screen route
+        '/login': (context) => LoginPage(),   // Login page route
+        '/signup': (context) => SignupPage(), // Signup page route
+      },
+      initialRoute: '/', // Set initial route
     );
   }
 }
@@ -29,4 +37,3 @@ class MainScreen extends StatelessWidget {
     );
   }
 }
-

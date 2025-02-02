@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/sections/footer_section.dart';
+import '../services/auth_service.dart';
 import 'signup_page.dart';
-import 'forgot_password_page.dart'; // Import the Forgot Password page
+import 'forgot_password_page.dart';
+import '/screens/home_screen.dart'; //
 
 class LoginPage extends StatefulWidget {
   @override
@@ -11,9 +13,11 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
+  final _authService = AuthService();
   String _username = '';
   String _password = '';
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -30,129 +34,17 @@ class _LoginPageState extends State<LoginPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     SizedBox(height: 48),
-                    Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Welcome back',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFDB2777),
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Sign in to continue learning',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildHeader(),
                     SizedBox(height: 32),
-                    TextFormField(
-                      decoration: InputDecoration(
-                        labelText: 'Username',
-                        prefixIcon: Icon(Icons.person, color: Color(0xFFDB2777)),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Color(0xFFDB2777)),
-                        ),
-                      ),
-                      keyboardType: TextInputType.text,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your username';
-                        }
-                        return null;
-                      },
-                      onSaved: (value) => _username = value!,
-                    ),
+                    _buildUsernameField(),
                     SizedBox(height: 16),
-                    TextFormField(
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock, color: Color(0xFFDB2777)),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                            color: Color(0xFFDB2777),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _isPasswordVisible = !_isPasswordVisible;
-                            });
-                          },
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Color(0xFFDB2777)),
-                        ),
-                      ),
-                      obscureText: !_isPasswordVisible,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your password';
-                        }
-                        return null;
-                      },
-                      onSaved: (value) => _password = value!,
-                    ),
+                    _buildPasswordField(),
                     SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: _submitForm,
-                      child: Text('Sign In'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFFDB2777),
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
+                    _buildLoginButton(),
                     SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => ForgotPasswordPage()),
-                        );
-                      },
-                      child: Text(
-                        'Forgot Password?',
-                        style: TextStyle(color: Color(0xFFDB2777)),
-                      ),
-                    ),
+                    _buildForgotPasswordButton(),
                     SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text("Don't have an account?"),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => SignupPage()),
-                            );
-                          },
-                          child: Text(
-                            'Sign Up',
-                            style: TextStyle(color: Color(0xFFDB2777)),
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildSignupOption(),
                   ],
                 ),
               ),
@@ -164,11 +56,140 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  void _submitForm() {
+  Widget _buildHeader() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Welcome back',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDB2777)),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Sign in to continue learning',
+            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUsernameField() {
+    return TextFormField(
+      decoration: InputDecoration(
+        labelText: 'Username',
+        prefixIcon: Icon(Icons.person, color: Color(0xFFDB2777)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Color(0xFFDB2777)),
+        ),
+      ),
+      keyboardType: TextInputType.text,
+      validator: (value) => value == null || value.isEmpty ? 'Please enter your username' : null,
+      onSaved: (value) => _username = value!,
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      decoration: InputDecoration(
+        labelText: 'Password',
+        prefixIcon: Icon(Icons.lock, color: Color(0xFFDB2777)),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+            color: Color(0xFFDB2777),
+          ),
+          onPressed: () {
+            setState(() {
+              _isPasswordVisible = !_isPasswordVisible;
+            });
+          },
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Color(0xFFDB2777)),
+        ),
+      ),
+      obscureText: !_isPasswordVisible,
+      validator: (value) => value == null || value.isEmpty ? 'Please enter your password' : null,
+      onSaved: (value) => _password = value!,
+    );
+  }
+
+  Widget _buildLoginButton() {
+    return ElevatedButton(
+      onPressed: _isLoading ? null : _submitForm,
+      child: _isLoading
+          ? SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+      )
+          : Text('Sign In'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Color(0xFFDB2777),
+        padding: EdgeInsets.symmetric(vertical: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildForgotPasswordButton() {
+    return TextButton(
+      onPressed: () {
+        Navigator.push(context, MaterialPageRoute(builder: (context) => ForgotPasswordPage()));
+      },
+      child: Text('Forgot Password?', style: TextStyle(color: Color(0xFFDB2777))),
+    );
+  }
+
+  Widget _buildSignupOption() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text("Don't have an account?"),
+        TextButton(
+          onPressed: () {
+            Navigator.push(context, MaterialPageRoute(builder: (context) => SignupPage()));
+          },
+          child: Text('Sign Up', style: TextStyle(color: Color(0xFFDB2777))),
+        ),
+      ],
+    );
+  }
+
+  void _submitForm() async {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
-      // Implement login logic here
-      print('Username: $_username, Password: $_password');
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        final response = await _authService.login(_username, _password);
+
+        // Check if accessToken is present in response
+        if (response.containsKey('accessToken')) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login successful!')));
+
+          // Navigate to Home Page
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen()));
+        } else {
+          throw Exception('Invalid credentials or unexpected response format');
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: ${e.toString()}')));
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
+
 }
