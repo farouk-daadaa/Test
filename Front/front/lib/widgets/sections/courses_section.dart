@@ -9,28 +9,34 @@ class CoursesSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Available trainings',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFDB2777), // Pink color from brand
-                ),
-              ),
-              TextButton(
-                onPressed: () {},
-                child: Text(
-                  'View all courses >',
-                  style: TextStyle(
-                    color: Color(0xFFDB2777),
-                    fontSize: 14,
+          // Updated header row
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Available trainings',
+                    style: TextStyle(
+                      fontSize: 20, // Smaller font size
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFDB2777),
+                    ),
                   ),
                 ),
-              ),
-            ],
+                TextButton(
+                  onPressed: () {},
+                  child: Text(
+                    'View all',  // Shortened text
+                    style: TextStyle(
+                      color: Color(0xFFDB2777),
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           SizedBox(height: 24),
           SingleChildScrollView(

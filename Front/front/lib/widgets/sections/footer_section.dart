@@ -40,24 +40,31 @@ class FooterSection extends StatelessWidget {
           ),
           SizedBox(height: 32),
           // Social Media Icons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildSocialIcon(FontAwesomeIcons.facebook),
-              _buildSocialIcon(FontAwesomeIcons.instagram),
-              _buildSocialIcon(FontAwesomeIcons.twitter),
-              _buildSocialIcon(FontAwesomeIcons.youtube),
-              _buildSocialIcon(FontAwesomeIcons.phone),
-              _buildSocialIcon(FontAwesomeIcons.envelope),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildSocialIcon(FontAwesomeIcons.facebook),
+                _buildSocialIcon(FontAwesomeIcons.instagram),
+                _buildSocialIcon(FontAwesomeIcons.twitter),
+                _buildSocialIcon(FontAwesomeIcons.youtube),
+                _buildSocialIcon(FontAwesomeIcons.phone),
+                _buildSocialIcon(FontAwesomeIcons.envelope),
+              ],
+            ),
           ),
           SizedBox(height: 32),
           // Copyright Text
-          Text(
-            'Copyright © 2025 All Rights Reserved by LetsCloneIt.',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 14,
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Copyright © 2025 All Rights Reserved by LetsCloneIt.',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -67,9 +74,9 @@ class FooterSection extends StatelessWidget {
 
   Widget _buildSocialIcon(IconData icon) {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 8),
-      width: 40,
-      height: 40,
+      margin: EdgeInsets.symmetric(horizontal: 6), // Reduced margin
+      width: 36, // Slightly smaller size
+      height: 36, // Slightly smaller size
       decoration: BoxDecoration(
         color: Color(0xFFFCA311),
         shape: BoxShape.circle,
@@ -77,7 +84,7 @@ class FooterSection extends StatelessWidget {
       child: IconButton(
         icon: FaIcon(
           icon,
-          size: 18,
+          size: 16, // Smaller icon size
           color: Colors.white,
         ),
         onPressed: () {},

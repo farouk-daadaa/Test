@@ -63,22 +63,24 @@ class FeaturesSection extends StatelessWidget {
                   text: 'Register for our Specializations to master a specific professional skill.',
                 ),
                 SizedBox(height: 40),
-                // Buttons Section
-                Row(
-                  mainAxisSize: MainAxisSize.min, // Ensure buttons take only needed space
-                  children: [
-                    _buildButton(
-                      text: 'Learn more',
-                      isPrimary: false,
-                      onPressed: () {},
-                    ),
-                    SizedBox(width: 16),
-                    _buildButton(
-                      text: 'Ask for a coach',
-                      isPrimary: true,
-                      onPressed: () {},
-                    ),
-                  ],
+                // Updated Buttons Section
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildButton(
+                        text: 'Learn more',
+                        isPrimary: false,
+                        onPressed: () {},
+                      ),
+                      SizedBox(width: 12), // Reduced spacing
+                      _buildButton(
+                        text: 'Ask for a coach',
+                        isPrimary: true,
+                        onPressed: () {},
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -122,34 +124,32 @@ class FeaturesSection extends StatelessWidget {
     );
   }
 
+  // Updated _buildButton method
   Widget _buildButton({
     required String text,
     required bool isPrimary,
     required VoidCallback onPressed,
   }) {
-    return IntrinsicWidth( // Ensure button width adapts to content
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          foregroundColor: isPrimary ? Colors.white : Color(0xFFDB2777),
-          backgroundColor: isPrimary ? Color(0xFFDB2777) : Colors.white,
-          padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16), // Adjust padding for full text visibility
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: Color(0xFFDB2777),
-              width: isPrimary ? 0 : 1,
-            ),
+    return ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        foregroundColor: isPrimary ? Colors.white : Color(0xFFDB2777),
+        backgroundColor: isPrimary ? Color(0xFFDB2777) : Colors.white,
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12), // Reduced padding
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: Color(0xFFDB2777),
+            width: isPrimary ? 0 : 1,
           ),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 14, // Smaller font size
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
