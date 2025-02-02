@@ -47,45 +47,43 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          SingleChildScrollView(
-            controller: _scrollController,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                HeroSection(),
-                StatisticsSection(),
-                CoursesSection(),
-                FeaturesSection(),
-                TestimonialsSection(),
-                ContactSection(),
-                FooterSection(),
-              ],
-            ),
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          controller: _scrollController,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              HeroSection(),
+              StatisticsSection(),
+              CoursesSection(),
+              FeaturesSection(),
+              TestimonialsSection(),
+              ContactSection(),
+              FooterSection(),
+            ],
           ),
-          if (_showBackToTop)
-            Positioned(
-              right: 24,
-              bottom: 24,
-              child: AnimatedOpacity(
-                opacity: _showBackToTop ? 1.0 : 0.0,
-                duration: Duration(milliseconds: 200),
-                child: FloatingActionButton(
-                  onPressed: _scrollToTop,
-                  backgroundColor: Color(0xFFFCA311),
-                  mini: true,
-                  child: Icon(
-                    Icons.arrow_upward,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+        ),
+        if (_showBackToTop)
+          Positioned(
+            right: 24,
+            bottom: 24,
+            child: AnimatedOpacity(
+              opacity: _showBackToTop ? 1.0 : 0.0,
+              duration: Duration(milliseconds: 200),
+              child: FloatingActionButton(
+                onPressed: _scrollToTop,
+                backgroundColor: Color(0xFFFCA311),
+                mini: true,
+                child: Icon(
+                  Icons.arrow_upward,
+                  color: Colors.white,
+                  size: 20,
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }

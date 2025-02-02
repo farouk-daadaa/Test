@@ -4,7 +4,6 @@ import '../widgets/sections/footer_section.dart';
 import '../services/auth_service.dart';
 import 'signup_page.dart';
 import 'forgot_password_page.dart';
-import '/screens/home_screen.dart'; //
 
 class LoginPage extends StatefulWidget {
   @override
@@ -155,7 +154,7 @@ class _LoginPageState extends State<LoginPage> {
         Text("Don't have an account?"),
         TextButton(
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => SignupPage()));
+            Navigator.pushNamed(context, '/signup');
           },
           child: Text('Sign Up', style: TextStyle(color: Color(0xFFDB2777))),
         ),
@@ -173,12 +172,11 @@ class _LoginPageState extends State<LoginPage> {
       try {
         final response = await _authService.login(_username, _password);
 
-        // Check if accessToken is present in response
         if (response.containsKey('accessToken')) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login successful!')));
 
-          // Navigate to Home Page
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen()));
+          // Navigate to the main screen (which includes the AppBar and HomeScreen)
+          Navigator.of(context).pushNamedAndRemoveUntil('/', (Route<dynamic> route) => false);
         } else {
           throw Exception('Invalid credentials or unexpected response format');
         }
@@ -191,5 +189,4 @@ class _LoginPageState extends State<LoginPage> {
       }
     }
   }
-
 }
