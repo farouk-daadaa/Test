@@ -4,6 +4,7 @@ import '../widgets/sections/footer_section.dart';
 import '../services/auth_service.dart';
 import 'signup_page.dart';
 import 'forgot_password_page.dart';
+import '../theme/app_theme.dart';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -56,22 +57,20 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildHeader() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            'Welcome back',
-            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDB2777)),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Sign in to continue learning',
-            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        Icon(Icons.school, size: 64, color: AppTheme.primaryColor),
+        SizedBox(height: 16),
+        Text(
+          'Welcome back',
+          style: Theme.of(context).textTheme.displayMedium,
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Sign in to continue learning',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
     );
   }
 
@@ -79,12 +78,7 @@ class _LoginPageState extends State<LoginPage> {
     return TextFormField(
       decoration: InputDecoration(
         labelText: 'Username',
-        prefixIcon: Icon(Icons.person, color: Color(0xFFDB2777)),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Color(0xFFDB2777)),
-        ),
+        prefixIcon: Icon(Icons.person),
       ),
       keyboardType: TextInputType.text,
       validator: (value) => value == null || value.isEmpty ? 'Please enter your username' : null,
@@ -96,22 +90,17 @@ class _LoginPageState extends State<LoginPage> {
     return TextFormField(
       decoration: InputDecoration(
         labelText: 'Password',
-        prefixIcon: Icon(Icons.lock, color: Color(0xFFDB2777)),
+        prefixIcon: Icon(Icons.lock),
         suffixIcon: IconButton(
           icon: Icon(
             _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
-            color: Color(0xFFDB2777),
+            color: AppTheme.primaryColor,
           ),
           onPressed: () {
             setState(() {
               _isPasswordVisible = !_isPasswordVisible;
             });
           },
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Color(0xFFDB2777)),
         ),
       ),
       obscureText: !_isPasswordVisible,
@@ -130,20 +119,17 @@ class _LoginPageState extends State<LoginPage> {
         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
       )
           : Text('Sign In'),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Color(0xFFDB2777),
-        padding: EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
     );
   }
 
   Widget _buildForgotPasswordButton() {
-    return TextButton(
-      onPressed: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => ForgotPasswordPage()));
-      },
-      child: Text('Forgot Password?', style: TextStyle(color: Color(0xFFDB2777))),
+    return Center(
+      child: TextButton(
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => ForgotPasswordPage()));
+        },
+        child: Text('Forgot Password?'),
+      ),
     );
   }
 
@@ -156,7 +142,7 @@ class _LoginPageState extends State<LoginPage> {
           onPressed: () {
             Navigator.pushNamed(context, '/signup');
           },
-          child: Text('Sign Up', style: TextStyle(color: Color(0xFFDB2777))),
+          child: Text('Sign Up'),
         ),
       ],
     );
@@ -174,8 +160,6 @@ class _LoginPageState extends State<LoginPage> {
 
         if (response.containsKey('accessToken')) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login successful!')));
-
-          // Navigate to the main screen (which includes the AppBar and HomeScreen)
           Navigator.of(context).pushNamedAndRemoveUntil('/', (Route<dynamic> route) => false);
         } else {
           throw Exception('Invalid credentials or unexpected response format');

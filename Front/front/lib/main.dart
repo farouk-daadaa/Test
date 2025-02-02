@@ -6,7 +6,7 @@ import 'package:front/pages/login_page.dart';
 import 'package:front/pages/signup_page.dart';
 import 'package:front/pages/forgot_password_page.dart';
 import 'package:front/pages/reset_password_page.dart';
-import 'package:front/pages/verify_reset_code_page.dart'; // Add this import
+import 'package:front/pages/verify_reset_code_page.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -17,11 +17,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Your App Name',
-      theme: ThemeData(
-        primarySwatch: Colors.pink,
-        colorScheme: ColorScheme.fromSwatch().copyWith(secondary: Color(0xFFDB2777)),
-      ),
+      title: 'The Bridge',
+      theme: AppTheme.lightTheme,
       routes: {
         '/': (context) => MainScreen(),
         '/login': (context) => LoginPage(),
