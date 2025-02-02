@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/sections/footer_section.dart';
+import '../services/auth_service.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   @override
@@ -9,7 +10,15 @@ class ForgotPasswordPage extends StatefulWidget {
 
 class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _formKey = GlobalKey<FormState>();
-  String _email = '';
+  final _emailController = TextEditingController();
+  final AuthService _authService = AuthService();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +61,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                     ),
                     SizedBox(height: 32),
                     TextFormField(
+                      controller: _emailController,
                       decoration: InputDecoration(
                         labelText: 'Email',
                         prefixIcon: Icon(Icons.email, color: Color(0xFFDB2777)),
@@ -69,14 +79,18 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           return 'Please enter your email';
                         }
                         // You can add more sophisticated email validation here
+                        if (!value.contains('@') || !value.contains('.')) {
+                          return 'Please enter a valid email address';
+                        }
                         return null;
                       },
-                      onSaved: (value) => _email = value!,
                     ),
                     SizedBox(height: 24),
                     ElevatedButton(
-                      onPressed: _submitForm,
-                      child: Text('Reset Password'),
+                      onPressed: _isLoading ? null : _submitForm,
+                      child: _isLoading
+                          ? CircularProgressIndicator(color: Colors.white)
+                          : Text('Reset Password'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFFDB2777),
                         padding: EdgeInsets.symmetric(vertical: 16),
@@ -106,18 +120,34 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     );
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
-      _formKey.currentState!.save();
-      // Implement password reset logic here
-      print('Reset password for email: $_email');
-      // Show a success message to the user
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Password reset link sent to $_email'),
-          backgroundColor: Color(0xFFDB2777),
-        ),
-      );
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        await _authService.forgotPassword(_emailController.text);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Password reset link sent to ${_emailController.text}'),
+            backgroundColor: Color(0xFFDB2777),
+          ),
+        );
+        // Optionally, navigate back to login page after successful submission
+        Navigator.pop(context);
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 }

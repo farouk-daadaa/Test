@@ -53,4 +53,23 @@ class AuthService {
       throw Exception('Network error: ${e.toString()}');
     }
   }
+  Future<void> forgotPassword(String email) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/forgot-password'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email}),
+      );
+
+      if (response.statusCode == 200) {
+        // Password reset link sent successfully
+        return;
+      } else {
+        final errorBody = json.decode(response.body);
+        throw Exception(errorBody['message'] ?? 'Failed to send password reset link');
+      }
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
 }
