@@ -32,21 +32,18 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Override
     protected void configure(HttpSecurity http) throws Exception {
         http
-                .cors() // Enable CORS
-                .and()
+                .cors().and()
                 .csrf().disable()
                 .exceptionHandling()
                 .authenticationEntryPoint(authEntryPoint)
                 .and()
-                .sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 .and()
                 .authorizeRequests()
+                .antMatchers("/api/auth/forgot-password").permitAll()
+                .antMatchers("/api/auth/reset-password").permitAll()
+                .antMatchers("/api/auth/validate-reset-token").permitAll()
                 .antMatchers("/api/auth/**").permitAll()
-             //   .antMatchers("/post/**").hasAuthority(UserRoleName.ADMIN.name())
-              //  .antMatchers("/image/**").hasAnyAuthority(UserRoleName.USER.name(),UserRoleName.ADMIN.name())
-
-
                 .antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
                 .and()
@@ -55,11 +52,13 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
     }
 
+
     @Override
-    @Bean // Expose AuthenticationManager as a Bean
+    @Bean
     public AuthenticationManager authenticationManagerBean() throws Exception {
         return super.authenticationManagerBean();
     }
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
