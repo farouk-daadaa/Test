@@ -19,6 +19,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'The Bridge',
       theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+
       routes: {
         '/': (context) => MainScreen(),
         '/login': (context) => LoginPage(),
@@ -46,4 +48,3 @@ class MainScreen extends StatelessWidget {
     );
   }
 }
-

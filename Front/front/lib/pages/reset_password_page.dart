@@ -40,14 +40,17 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Reset Password',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFDB2777),
+                    Center(
+                      child: Text(
+                        'Reset Password',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFDB2777),
+                        ),
                       ),
                     ),
+
                     SizedBox(height: 24),
                     TextFormField(
                       controller: _passwordController,
