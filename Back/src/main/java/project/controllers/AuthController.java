@@ -12,11 +12,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import project.dto.AuthResponseDTO;
+import project.dto.InstructorRegisterDto;
 import project.dto.LoginDto;
 import project.dto.RegisterDto;
-import project.models.UserRole;
-import project.models.UserEntity;
-import project.models.UserRoleName;
+import project.models.*;
 import project.repository.RoleRepository;
 import project.repository.UserRepository;
 import project.security.JWTGenerator;
@@ -149,7 +148,43 @@ public class AuthController {
 
         return ResponseEntity.ok(user);
     }
+    @PostMapping("/register/instructor")
+    public ResponseEntity<?> registerInstructor(@RequestBody InstructorRegisterDto registerDto) {
+        if (userRepository.existsByUsername(registerDto.getUsername())) {
+            return ResponseEntity.badRequest().body("Username is taken!");
+        }
 
+        if (userRepository.existsByEmail(registerDto.getEmail())) {
+            return ResponseEntity.badRequest().body("Email is already registered!");
+        }
+
+        UserEntity user = new UserEntity();
+        user.setFirstName(registerDto.getFirstName());
+        user.setLastName(registerDto.getLastName());
+        user.setUsername(registerDto.getUsername());
+        user.setEmail(registerDto.getEmail());
+        user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
+        user.setCreationDate(new Date());
+
+        UserRole instructorRole = new UserRole();
+        instructorRole.setUserRoleName(UserRoleName.INSTRUCTOR);
+        instructorRole.setUserEntity(user);
+
+        user.setUserRole(instructorRole);
+
+        Instructor instructor = new Instructor();
+        instructor.setUser(user);
+        instructor.setPhone(registerDto.getPhone());
+        instructor.setCv(registerDto.getCv());
+        instructor.setLinkedinLink(registerDto.getLinkedinLink());
+        instructor.setStatus(InstructorStatus.PENDING);
+
+        user.setInstructor(instructor);
+
+        userRepository.save(user);
+
+        return ResponseEntity.ok("Instructor registered successfully. Waiting for admin approval.");
+    }
 
     @DeleteMapping("delete/{username}")
     public ResponseEntity<?> deleteUser(@PathVariable String username) {

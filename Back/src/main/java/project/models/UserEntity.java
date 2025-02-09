@@ -1,12 +1,11 @@
 package project.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import lombok.*;
 
 import javax.persistence.*;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.List;
 
 @Entity
 @Getter
@@ -15,9 +14,8 @@ import java.util.List;
 public class UserEntity {
 
     @Id
-    @GeneratedValue(strategy= GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
-
 
     private String firstName;
     private String lastName;
@@ -28,14 +26,14 @@ public class UserEntity {
     @Temporal(TemporalType.DATE)
     private Date creationDate;
 
-
-
-
     @OneToOne(mappedBy = "userEntity", cascade = CascadeType.ALL)
     private UserRole userRole;
-
 
     @JsonIgnore
     @OneToOne(mappedBy = "userEntity")
     private Image userImage;
+
+    @JsonManagedReference
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private Instructor instructor;
 }
