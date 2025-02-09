@@ -23,6 +23,8 @@ import project.security.JWTGenerator;
 import javax.annotation.PostConstruct;
 import java.util.Date;
 import java.util.Optional;
+import project.service.EmailService;
+
 
 @RestController
 @RequestMapping("/api/auth")
@@ -48,7 +50,8 @@ public class AuthController {
         this.jwtGenerator = jwtGenerator;
     }
 
-
+    @Autowired
+    private EmailService emailService;
 
     @PostConstruct
     public void createDefaultAdminAccount() {
@@ -183,8 +186,12 @@ public class AuthController {
 
         userRepository.save(user);
 
+        // Send confirmation email
+        emailService.sendInstructorSignUpEmail(user.getEmail());
+
         return ResponseEntity.ok("Instructor registered successfully. Waiting for admin approval.");
     }
+
 
     @DeleteMapping("delete/{username}")
     public ResponseEntity<?> deleteUser(@PathVariable String username) {

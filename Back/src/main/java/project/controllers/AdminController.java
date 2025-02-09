@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import project.models.Instructor;
 import project.models.InstructorStatus;
 import project.repository.InstructorRepository;
+import project.service.EmailService;
 import java.util.List;
 
 @RestController
@@ -17,6 +18,9 @@ public class AdminController {
     @Autowired
     private InstructorRepository instructorRepository;
 
+    @Autowired
+    private EmailService emailService;
+
     @PutMapping("/approve-instructor/{id}")
     public ResponseEntity<?> approveInstructor(@PathVariable Long id) {
         Instructor instructor = instructorRepository.findById(id)
@@ -24,6 +28,9 @@ public class AdminController {
 
         instructor.setStatus(InstructorStatus.APPROVED);
         instructorRepository.save(instructor);
+
+        // Send approval email
+        emailService.sendInstructorStatusUpdateEmail(instructor.getUser().getEmail(), "APPROVED");
 
         return ResponseEntity.ok("Instructor approved successfully");
     }
@@ -35,6 +42,9 @@ public class AdminController {
 
         instructor.setStatus(InstructorStatus.REJECTED);
         instructorRepository.save(instructor);
+
+        // Send rejection email
+        emailService.sendInstructorStatusUpdateEmail(instructor.getUser().getEmail(), "REJECTED");
 
         return ResponseEntity.ok("Instructor rejected");
     }
@@ -50,3 +60,4 @@ public class AdminController {
         return ResponseEntity.ok(instructors);
     }
 }
+
