@@ -36,4 +36,6 @@ public class UserEntity {
     @JsonManagedReference
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
     private Instructor instructor;
+
+
 }

@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 
 import javax.persistence.*;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Getter
@@ -28,5 +30,15 @@ public class Instructor {
     @Enumerated(EnumType.STRING)
     private InstructorStatus status = InstructorStatus.PENDING;
 
-    // Constructors, getters, and setters
+    @OneToMany(mappedBy = "instructor", cascade = CascadeType.ALL)
+    private List<Course> courses = new ArrayList<>();
+    // Getter for status
+    public InstructorStatus getStatus() {
+        return status;
+    }
+
+    // Setter for status
+    public void setStatus(InstructorStatus status) {
+        this.status = status;
+    }
 }
