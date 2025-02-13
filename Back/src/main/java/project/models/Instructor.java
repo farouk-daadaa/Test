@@ -1,6 +1,7 @@
 package project.models;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,6 +13,7 @@ import java.util.List;
 @Getter
 @Setter
 @Table(name = "instructors")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Instructor {
 
     @Id
@@ -32,12 +34,11 @@ public class Instructor {
 
     @OneToMany(mappedBy = "instructor", cascade = CascadeType.ALL)
     private List<Course> courses = new ArrayList<>();
-    // Getter for status
+
     public InstructorStatus getStatus() {
         return status;
     }
 
-    // Setter for status
     public void setStatus(InstructorStatus status) {
         this.status = status;
     }
