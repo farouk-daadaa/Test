@@ -21,15 +21,15 @@ public class CourseController {
 
     @PostMapping
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal)")
-    public ResponseEntity<Course> createCourse(@Valid @RequestBody Course course, Authentication authentication) {
-        Course createdCourse = courseService.createCourse(course, authentication.getName());
+    public ResponseEntity<Course> createCourse(@Valid @RequestBody Course course, @RequestParam Long categoryId, Authentication authentication) {
+        Course createdCourse = courseService.createCourse(course, categoryId, authentication.getName());
         return new ResponseEntity<>(createdCourse, HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal) and @userSecurity.isOwnerOfCourse(authentication.principal, #id)")
-    public ResponseEntity<Course> updateCourse(@PathVariable Long id, @Valid @RequestBody Course course) {
-        Course updatedCourse = courseService.updateCourse(id, course);
+    public ResponseEntity<Course> updateCourse(@PathVariable Long id, @Valid @RequestBody Course course, @RequestParam(required = false) Long categoryId) {
+        Course updatedCourse = courseService.updateCourse(id, course, categoryId);
         return ResponseEntity.ok(updatedCourse);
     }
 
