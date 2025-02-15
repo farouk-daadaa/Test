@@ -1,11 +1,14 @@
 package project.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import lombok.*;
 
 import javax.persistence.*;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 @Entity
 @Getter
@@ -37,5 +40,7 @@ public class UserEntity {
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
     private Instructor instructor;
 
-
+    @OneToMany(mappedBy = "student")
+    @JsonIgnoreProperties("student")
+    private List<Enrollment> enrollments = new ArrayList<>();
 }

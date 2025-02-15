@@ -34,6 +34,10 @@ public class Course {
     @Column(precision = 10, scale = 2)
     private BigDecimal price;
 
+    @Enumerated(EnumType.STRING)
+    @NotNull
+    private PricingType pricingType;
+
     @DecimalMin("0.0")
     @DecimalMax("5.0")
     private Double rating;
@@ -43,11 +47,13 @@ public class Course {
 
     private String imageUrl;
 
-    @NotBlank
-    private String level;
+    @Enumerated(EnumType.STRING)
+    @NotNull
+    private CourseLevel level;
 
-    @NotBlank
-    private String language;
+    @Enumerated(EnumType.STRING)
+    @NotNull
+    private CourseLanguage language;
 
     @Min(0)
     private int totalStudents;
@@ -71,4 +77,8 @@ public class Course {
     @JoinColumn(name = "category_id")
     @JsonIgnoreProperties("courses")
     private CourseCategory category;
+
+    @OneToMany(mappedBy = "course")
+    @JsonIgnoreProperties("course")
+    private List<Enrollment> enrollments = new ArrayList<>();
 }
