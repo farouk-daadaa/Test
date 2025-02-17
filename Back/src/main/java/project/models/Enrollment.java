@@ -6,6 +6,8 @@ import lombok.Setter;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Getter
@@ -35,4 +37,9 @@ public class Enrollment {
     private LocalDateTime enrollmentDate;
 
     private LocalDateTime lastAccessedDate;
+
+
+    @OneToMany(mappedBy = "enrollment", cascade = CascadeType.ALL)
+    @JsonIgnoreProperties("enrollment")
+    private List<LessonProgress> lessonProgresses = new ArrayList<>();
 }
