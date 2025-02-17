@@ -2,6 +2,7 @@ package project.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import project.dto.CourseDTO;
 import project.models.*;
 import project.repository.CourseCategoryRepository;
 import project.repository.CourseRepository;
@@ -12,6 +13,7 @@ import project.exception.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class CourseService {
@@ -28,7 +30,7 @@ public class CourseService {
     @Autowired
     private CourseCategoryRepository courseCategoryRepository;
 
-    public Course createCourse(Course course, Long categoryId, String username) {
+    public CourseDTO createCourse(CourseDTO courseDTO, Long categoryId, String username) {
         UserEntity user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -38,6 +40,14 @@ public class CourseService {
         CourseCategory category = courseCategoryRepository.findById(categoryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + categoryId));
 
+        Course course = new Course();
+        course.setTitle(courseDTO.getTitle());
+        course.setDescription(courseDTO.getDescription());
+        course.setPrice(courseDTO.getPrice());
+        course.setPricingType(courseDTO.getPricingType());
+        course.setImageUrl(courseDTO.getImageUrl());
+        course.setLevel(courseDTO.getLevel());  // Now using CourseLevel enum directly
+        course.setLanguage(courseDTO.getLanguage());  // Now using CourseLanguage enum directly
         course.setInstructor(instructor);
         course.setCategory(category);
         course.setLastUpdate(LocalDate.now());
@@ -45,26 +55,24 @@ public class CourseService {
         course.setTotalReviews(0);
         course.setTotalStudents(0);
 
-        // Handle pricing type and price
         handlePricingAndPrice(course);
 
-        return courseRepository.save(course);
+        Course savedCourse = courseRepository.save(course);
+        return CourseDTO.fromEntity(savedCourse);
     }
 
-    public Course updateCourse(Long id, Course courseDetails, Long categoryId) {
-        Course course = getCourseById(id);
+    public CourseDTO updateCourse(Long id, CourseDTO courseDTO, Long categoryId) {
+        Course course = getCourseEntityById(id);  // Changed to use the correct method
 
-        // Update basic details
-        course.setTitle(courseDetails.getTitle());
-        course.setDescription(courseDetails.getDescription());
-        course.setLevel(courseDetails.getLevel());
-        course.setLanguage(courseDetails.getLanguage());
-        course.setImageUrl(courseDetails.getImageUrl());
+        course.setTitle(courseDTO.getTitle());
+        course.setDescription(courseDTO.getDescription());
+        course.setLevel(courseDTO.getLevel());  // Now using CourseLevel enum directly
+        course.setLanguage(courseDTO.getLanguage());  // Now using CourseLanguage enum directly
+        course.setImageUrl(courseDTO.getImageUrl());
         course.setLastUpdate(LocalDate.now());
+        course.setPricingType(courseDTO.getPricingType());
+        course.setPrice(courseDTO.getPrice());
 
-        // Update pricing type and price
-        course.setPricingType(courseDetails.getPricingType());
-        course.setPrice(courseDetails.getPrice());
         handlePricingAndPrice(course);
 
         if (categoryId != null) {
@@ -73,35 +81,42 @@ public class CourseService {
             course.setCategory(category);
         }
 
-        return courseRepository.save(course);
+        Course updatedCourse = courseRepository.save(course);
+        return CourseDTO.fromEntity(updatedCourse);
     }
 
     private void handlePricingAndPrice(Course course) {
-        // Set default pricing type if not specified
         if (course.getPricingType() == null) {
             course.setPricingType(PricingType.PAID);
         }
 
-        // Handle price based on pricing type
         if (course.getPricingType() == PricingType.FREE) {
             course.setPrice(BigDecimal.ZERO);
         } else if (course.getPrice() == null || course.getPrice().compareTo(BigDecimal.ZERO) < 0) {
-            // Set default price for paid courses if price is null or negative
             course.setPrice(BigDecimal.ZERO);
         }
     }
 
     public void deleteCourse(Long id) {
-        Course course = getCourseById(id);
+        Course course = getCourseEntityById(id);
         courseRepository.delete(course);
     }
 
-    public Course getCourseById(Long id) {
-        return courseRepository.findById(id)
+    public CourseDTO getCourseById(Long id) {
+        Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
+        return CourseDTO.fromEntity(course);
     }
 
-    public List<Course> getAllCourses() {
-        return courseRepository.findAll();
+    public List<CourseDTO> getAllCourses() {
+        return courseRepository.findAll().stream()
+                .map(CourseDTO::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    // This method is used internally and still returns the Course entity
+    private Course getCourseEntityById(Long id) {
+        return courseRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
     }
 }

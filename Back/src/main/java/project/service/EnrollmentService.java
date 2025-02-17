@@ -37,11 +37,9 @@ public class EnrollmentService {
 
     @Transactional
     public EnrollmentDTO enrollStudentInCourse(Long userId, Long courseId) {
-        // Convert userId (Long) to Integer as expected by UserRepository
-        UserEntity student = userRepository.findById(userId.intValue())
+        UserEntity student = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // CourseRepository uses Long for Course id, so no conversion is needed here
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
 
@@ -69,15 +67,18 @@ public class EnrollmentService {
             lessonProgressRepository.save(lessonProgress);
         }
 
+        // Increment the total students count
+        course.setTotalStudents(course.getTotalStudents() + 1);
+        courseRepository.save(course);
+
         return convertToDTO(enrollment);
     }
 
+    @Transactional
     public void unenrollStudentFromCourse(Long userId, Long courseId) {
-        // Convert userId to Integer
-        UserEntity student = userRepository.findById(userId.intValue())
+        UserEntity student = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Retrieve the Course (using Long for courseId)
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found"));
 
@@ -87,35 +88,35 @@ public class EnrollmentService {
 
         // Delete the enrollment
         enrollmentRepository.delete(enrollment);
+
+        // Decrement the total students count
+        int currentStudents = course.getTotalStudents();
+        course.setTotalStudents(Math.max(0, currentStudents - 1)); // Ensure it doesn't go below 0
+        courseRepository.save(course);
     }
 
     public List<EnrollmentDTO> getEnrolledCourses(Long userId) {
-        // Convert userId to Integer
-        UserEntity student = userRepository.findById(userId.intValue())
+        UserEntity student = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Map each Enrollment to its DTO and return the list
         return enrollmentRepository.findByStudent(student)
                 .stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public void updateEnrollmentProgress(Long enrollmentId, int progressPercentage, Long userId) {
-        // Retrieve the enrollment using enrollmentId (assumed to be Long)
         Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
 
-        // Check if the user is the owner of this enrollment by comparing IDs (converted to int)
         if (enrollment.getStudent().getId() != userId.intValue()) {
             throw new IllegalStateException("User is not authorized to update this enrollment");
         }
 
-        // Update progress and last accessed date
         enrollment.setProgressPercentage(progressPercentage);
         enrollment.setLastAccessedDate(LocalDateTime.now());
 
-        // Mark as COMPLETED if progress is 100%
         if (progressPercentage == 100) {
             enrollment.setStatus(EnrollmentStatus.COMPLETED);
         }

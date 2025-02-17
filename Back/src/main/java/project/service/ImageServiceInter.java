@@ -9,11 +9,11 @@ import java.io.IOException;
 public interface ImageServiceInter {
 
 
-    ResponseEntity<String> uploadImage(MultipartFile file, int idUser) throws IOException;
+    ResponseEntity<String> uploadImage(MultipartFile file, long idUser) throws IOException;
 
-    ResponseEntity<Image> getImage(int idUser);
+    ResponseEntity<Image> getImage(long idUser);
 
-    ResponseEntity<String> updateImage(MultipartFile file, int idUser) throws IOException;
+    ResponseEntity<String> updateImage(MultipartFile file, long idUser) throws IOException;
 
-    ResponseEntity<String> deleteImage(int idUser);
+    ResponseEntity<String> deleteImage(long idUser);
 }

@@ -40,6 +40,7 @@ public class Course {
 
     @DecimalMin("0.0")
     @DecimalMax("5.0")
+    @Digits(integer = 1, fraction = 1)
     private Double rating;
 
     @Min(0)

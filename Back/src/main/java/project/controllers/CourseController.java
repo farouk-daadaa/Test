@@ -6,7 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import project.models.Course;
+import project.dto.CourseDTO;
 import project.service.CourseService;
 
 import javax.validation.Valid;
@@ -21,15 +21,15 @@ public class CourseController {
 
     @PostMapping
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal)")
-    public ResponseEntity<Course> createCourse(@Valid @RequestBody Course course, @RequestParam Long categoryId, Authentication authentication) {
-        Course createdCourse = courseService.createCourse(course, categoryId, authentication.getName());
+    public ResponseEntity<CourseDTO> createCourse(@Valid @RequestBody CourseDTO courseDTO, @RequestParam Long categoryId, Authentication authentication) {
+        CourseDTO createdCourse = courseService.createCourse(courseDTO, categoryId, authentication.getName());
         return new ResponseEntity<>(createdCourse, HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal) and @userSecurity.isOwnerOfCourse(authentication.principal, #id)")
-    public ResponseEntity<Course> updateCourse(@PathVariable Long id, @Valid @RequestBody Course course, @RequestParam(required = false) Long categoryId) {
-        Course updatedCourse = courseService.updateCourse(id, course, categoryId);
+    public ResponseEntity<CourseDTO> updateCourse(@PathVariable Long id, @Valid @RequestBody CourseDTO courseDTO, @RequestParam(required = false) Long categoryId) {
+        CourseDTO updatedCourse = courseService.updateCourse(id, courseDTO, categoryId);
         return ResponseEntity.ok(updatedCourse);
     }
 
@@ -41,14 +41,14 @@ public class CourseController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Course> getCourse(@PathVariable Long id) {
-        Course course = courseService.getCourseById(id);
+    public ResponseEntity<CourseDTO> getCourse(@PathVariable Long id) {
+        CourseDTO course = courseService.getCourseById(id);
         return ResponseEntity.ok(course);
     }
 
     @GetMapping
-    public ResponseEntity<List<Course>> getAllCourses() {
-        List<Course> courses = courseService.getAllCourses();
+    public ResponseEntity<List<CourseDTO>> getAllCourses() {
+        List<CourseDTO> courses = courseService.getAllCourses();
         return ResponseEntity.ok(courses);
     }
 }

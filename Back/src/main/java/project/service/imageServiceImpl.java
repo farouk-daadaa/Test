@@ -25,7 +25,7 @@ public class imageServiceImpl implements ImageServiceInter{
     @Autowired
     private ImageRepository imageRepository;
     @Override
-    public ResponseEntity<String> uploadImage(MultipartFile file, int idUser) throws IOException {
+    public ResponseEntity<String> uploadImage(MultipartFile file, long idUser) throws IOException {
         Optional<UserEntity> userOptional = userRepository.findById(idUser);
 
         if (userOptional.isPresent()) {
@@ -49,8 +49,8 @@ public class imageServiceImpl implements ImageServiceInter{
 
 
     @Override
-    public ResponseEntity<Image> getImage(int idUser) {
-        Optional<Image> retrivedImage = imageRepository.findByUserEntityId(idUser);
+    public ResponseEntity<Image> getImage(long idUser) {
+        Optional<Image> retrivedImage = imageRepository.findByUserEntityId((int) idUser);
         if(retrivedImage.isPresent())
         {
             Image img =retrivedImage.get();
@@ -62,7 +62,7 @@ public class imageServiceImpl implements ImageServiceInter{
     }
 
     @Override
-    public ResponseEntity<String> updateImage(MultipartFile file, int idUser) throws IOException {
+    public ResponseEntity<String> updateImage(MultipartFile file, long idUser) throws IOException {
 
         Optional<UserEntity> userOptional=userRepository.findById(idUser);
         if(userOptional.isPresent())
@@ -80,7 +80,7 @@ public class imageServiceImpl implements ImageServiceInter{
     }
 
     @Override
-    public ResponseEntity<String> deleteImage(int idUser) {
+    public ResponseEntity<String> deleteImage(long idUser) {
         Optional<UserEntity> userOptional= userRepository.findById(idUser);
         if(userOptional.isPresent())
         {
