@@ -24,6 +24,7 @@ import javax.annotation.PostConstruct;
 import java.util.Date;
 import java.util.Optional;
 import project.service.EmailService;
+import project.service.imageServiceImpl;
 
 
 @RestController
@@ -53,6 +54,9 @@ public class AuthController {
     @Autowired
     private EmailService emailService;
 
+    @Autowired
+    private imageServiceImpl imageService;
+
     @PostConstruct
     public void createDefaultAdminAccount() {
         if (!userRepository.existsByUsername("admin")) {
@@ -78,6 +82,19 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/validate-token")
+    public ResponseEntity<?> validateToken(@RequestHeader("Authorization") String token) {
+        try {
+            if (token.startsWith("Bearer ")) {
+                token = token.substring(7); // Remove "Bearer " prefix
+            }
+
+            boolean isValid = jwtGenerator.validateToken(token);
+            return ResponseEntity.ok(isValid);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or expired token");
+        }
+    }
 
 
     @PostMapping("login")
@@ -104,7 +121,6 @@ public class AuthController {
             }
 
         } catch (AuthenticationException e) {
-            // Authentication failed, return an error message
             return new ResponseEntity<>("Invalid username or password", HttpStatus.UNAUTHORIZED);
         }
     }
@@ -129,6 +145,8 @@ public class AuthController {
         user.setEmail(registerDto.getEmail());
 
         user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
+        user.setPhoneNumber(registerDto.getPhoneNumber());
+        user.setGender(registerDto.getGender());
 
         // Set creationDate to the current date
         user.setCreationDate(new Date());
@@ -146,7 +164,7 @@ public class AuthController {
 
         userRepository.save(user);
 
-
+        imageService.createDefaultImage(user);
 
 
         return ResponseEntity.ok(user);
@@ -167,6 +185,8 @@ public class AuthController {
         user.setUsername(registerDto.getUsername());
         user.setEmail(registerDto.getEmail());
         user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
+        user.setPhoneNumber(registerDto.getPhone());
+        user.setGender(registerDto.getGender());
         user.setCreationDate(new Date());
 
         UserRole instructorRole = new UserRole();
@@ -185,6 +205,8 @@ public class AuthController {
         user.setInstructor(instructor);
 
         userRepository.save(user);
+
+        imageService.createDefaultImage(user);
 
         // Send confirmation email
         emailService.sendInstructorSignUpEmail(user.getEmail());

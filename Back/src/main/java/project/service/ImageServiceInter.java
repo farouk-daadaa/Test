@@ -11,7 +11,7 @@ public interface ImageServiceInter {
 
     ResponseEntity<String> uploadImage(MultipartFile file, long idUser) throws IOException;
 
-    ResponseEntity<Image> getImage(long idUser);
+    ResponseEntity<Image> getImage(Long idUser);
 
     ResponseEntity<String> updateImage(MultipartFile file, long idUser) throws IOException;
 

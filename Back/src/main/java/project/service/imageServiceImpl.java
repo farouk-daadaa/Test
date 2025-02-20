@@ -4,10 +4,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import project.models.Gender;
 import project.models.Image;
 import project.models.UserEntity;
 import project.repository.ImageRepository;
 import project.repository.UserRepository;
+import project.utils.DefaultImageUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -24,39 +26,45 @@ public class imageServiceImpl implements ImageServiceInter{
     private UserRepository userRepository;
     @Autowired
     private ImageRepository imageRepository;
+
     @Override
     public ResponseEntity<String> uploadImage(MultipartFile file, long idUser) throws IOException {
         Optional<UserEntity> userOptional = userRepository.findById(idUser);
 
         if (userOptional.isPresent()) {
-            if (userOptional.get().getUserImage()!= null) {
+            UserEntity user = userOptional.get();
+            Image img;
 
-                return ResponseEntity.badRequest().body("User already has an image");
+            if (user.getUserImage() != null) {
+                // Update existing image
+                img = user.getUserImage();
+                img.setName(file.getOriginalFilename());
+                img.setPicByte(compressBytes(file.getBytes()));
+            } else {
+                // Create new image if none exists
+                img = new Image();
+                img.setName(file.getOriginalFilename());
+                img.setPicByte(compressBytes(file.getBytes()));
+                img.setUserEntity(user);
             }
-            Image img = new Image();
-            img.setName(file.getOriginalFilename());
-            img.setPicByte(compressBytes(file.getBytes()));
-            // img.setUserId(userOptional.get().getId());
-            img.setUserEntity(userOptional.get());//badalneha
+
             imageRepository.save(img);
-            return ResponseEntity.ok("image ( " + img.getName()+" ) added to user with ID:"+img.getUserEntity().getId()); // Use an appropriate endpoint or identifier
-
-        }else {
-            return ResponseEntity.notFound().build();//zedneha
-        }    }
-
+            return ResponseEntity.ok("Image " + img.getName() + " saved for user with ID: " + user.getId());
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
 
 
 
     @Override
-    public ResponseEntity<Image> getImage(long idUser) {
-        Optional<Image> retrivedImage = imageRepository.findByUserEntityId((int) idUser);
-        if(retrivedImage.isPresent())
-        {
-            Image img =retrivedImage.get();
+    public ResponseEntity<Image> getImage(Long idUser) { // Change from long to Long
+        Optional<Image> retrivedImage = imageRepository.findByUserEntityId(idUser);
+        if(retrivedImage.isPresent()) {
+            Image img = retrivedImage.get();
             img.setPicByte(decompressBytes(img.getPicByte()));
             return ResponseEntity.ok(img);
-        }else {
+        } else {
             return ResponseEntity.notFound().build();
         }
     }
@@ -142,6 +150,18 @@ public class imageServiceImpl implements ImageServiceInter{
         return outputStream.toByteArray();
     }
 
+    public Image createDefaultImage(UserEntity user) {
+        Image img = new Image();
+        byte[] defaultImageBytes = DefaultImageUtil.getDefaultImage();
+        img.setName("default-profile.jpg");
+        img.setPicByte(compressBytes(defaultImageBytes));
+        img.setUserEntity(user);
+        return imageRepository.save(img);
+    }
 
+    // Add this method to check if user has an image
+    public boolean hasImage(UserEntity user) {
+        return user.getUserImage() != null;
+    }
 
 }

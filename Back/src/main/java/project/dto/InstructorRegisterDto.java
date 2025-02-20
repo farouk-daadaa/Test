@@ -1,6 +1,7 @@
 package project.dto;
 
 import lombok.Data;
+import project.models.Gender;
 
 @Data
 public class InstructorRegisterDto {
@@ -12,4 +13,5 @@ public class InstructorRegisterDto {
     private String phone;
     private String cv;
     private String linkedinLink;
+    private Gender gender;
 }

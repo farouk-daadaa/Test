@@ -34,7 +34,7 @@ public class ImageController {
     }
 
     @GetMapping("/get/{idUser}")
-    public ResponseEntity<Image>getImageByidUser(@PathVariable int idUser)
+    public ResponseEntity<Image>getImageByidUser(@PathVariable Long idUser)
     {
         return imageServiceInter.getImage(idUser);
 
