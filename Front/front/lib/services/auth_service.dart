@@ -1,29 +1,40 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
-class AuthService {
-  static const String baseUrl = 'http://192.168.1.11:8080';
+class AuthService with ChangeNotifier {
+  static const String baseUrl = 'http://192.168.1.13:8080';
+  final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  String? _token;
+  String? _userRole;
+  String? _instructorStatus;
 
-  Future<Map<String, dynamic>> register(Map<String, String> userData) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(userData),
-      );
+  String? get token => _token;
+  String? get userRole => _userRole;
+  String? get instructorStatus => _instructorStatus;
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else if (response.statusCode == 400) {
-        // Handle bad request errors
-        final errorBody = json.decode(response.body);
-        throw Exception(errorBody['message'] ?? 'Registration failed');
-      } else {
-        throw Exception('Failed to register: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+  Future<bool> _checkInternetConnection() async {
+    var connectivityResult = await (Connectivity().checkConnectivity());
+    return connectivityResult != ConnectivityResult.none;
+  }
+
+  Future<void> _handleNetworkError(dynamic error) async {
+    if (!await _checkInternetConnection()) {
+      throw Exception('No internet connection. Please try again later.');
+    } else if (error is http.ClientException) {
+      throw Exception('Network error: Unable to connect to the server.');
+    } else {
+      throw Exception('An unexpected error occurred: ${error.toString()}');
     }
+  }
+
+  Future<void> loadToken() async {
+    _token = await _secureStorage.read(key: 'auth_token');
+    _userRole = await _secureStorage.read(key: 'user_role');
+    _instructorStatus = await _secureStorage.read(key: 'instructor_status');
+    notifyListeners();
   }
 
   Future<Map<String, dynamic>> login(String username, String password) async {
@@ -37,20 +48,80 @@ class AuthService {
         }),
       );
 
-      // Logging for debugging
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final Map<String, dynamic> responseData = json.decode(response.body);
+
+        if (responseData.containsKey('accessToken')) {
+          _token = responseData['accessToken'];
+          await _secureStorage.write(key: 'auth_token', value: _token);
+
+          if (responseData.containsKey('user')) {
+            final userData = responseData['user'];
+            if (userData.containsKey('role')) {
+              _userRole = userData['role'].toString();
+              await _secureStorage.write(key: 'user_role', value: _userRole);
+
+              if (_userRole == 'INSTRUCTOR' && userData.containsKey('instructor')) {
+                _instructorStatus = userData['instructor']['status'];
+                await _secureStorage.write(key: 'instructor_status', value: _instructorStatus);
+              }
+            }
+          }
+
+          notifyListeners();
+          return responseData;
+        } else {
+          throw Exception('Invalid response format: missing access token');
+        }
       } else if (response.statusCode == 401) {
         throw Exception('Invalid username or password');
       } else {
-        throw Exception('Failed to login: ${response.statusCode}');
+        final errorBody = json.decode(response.body);
+        throw Exception(errorBody['message'] ?? 'Failed to login: ${response.statusCode}');
       }
     } catch (e) {
-      print('Login error: $e');
-      throw Exception('Network error: ${e.toString()}');
+      await _handleNetworkError(e);
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> register(Map<String, String> userData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(userData),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        final errorBody = json.decode(response.body);
+        throw Exception(errorBody['message'] ?? 'Registration failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      await _handleNetworkError(e);
+      rethrow;
+    }
+  }
+
+  Future<void> registerInstructor(Map<String, dynamic> userData) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/register/instructor'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(userData),
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return; // Success
+      } else {
+        final errorBody = json.decode(response.body);
+        throw Exception(errorBody['message'] ?? 'Registration failed');
+      }
+    } catch (e) {
+      await _handleNetworkError(e);
+      rethrow;
     }
   }
 
@@ -62,15 +133,13 @@ class AuthService {
         body: json.encode({'email': email}),
       );
 
-      if (response.statusCode == 200) {
-        // Password reset code sent successfully
-        return;
-      } else {
+      if (response.statusCode != 200) {
         final errorBody = json.decode(response.body);
-        throw Exception(errorBody['message'] ?? 'Failed to send password reset code');
+        throw Exception(errorBody['message'] ?? 'Failed to send reset code');
       }
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      await _handleNetworkError(e);
+      rethrow;
     }
   }
 
@@ -78,15 +147,13 @@ class AuthService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/auth/validate-reset-code?code=$code'),
+        headers: {'Content-Type': 'application/json'},
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      } else {
-        throw Exception('Failed to validate code: ${response.statusCode}');
-      }
+      return response.statusCode == 200;
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      await _handleNetworkError(e);
+      rethrow;
     }
   }
 
@@ -101,14 +168,74 @@ class AuthService {
         }),
       );
 
-      if (response.statusCode == 200) {
-        return;
-      } else {
+      if (response.statusCode != 200) {
         final errorBody = json.decode(response.body);
         throw Exception(errorBody['message'] ?? 'Failed to reset password');
       }
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      await _handleNetworkError(e);
+      rethrow;
     }
   }
+
+  Future<bool> isLoggedIn() async {
+    final token = await getToken();
+    return token != null;
+  }
+
+  Future<String?> getToken() async {
+    return await _secureStorage.read(key: 'auth_token');
+  }
+
+  Future<void> logout(BuildContext context) async {
+    bool confirmLogout = await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Confirm Logout'),
+          content: Text('Are you sure you want to log out?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: Text('Yes'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+
+    if (confirmLogout) {
+      _token = null;
+      _userRole = null;
+      _instructorStatus = null;
+      await _secureStorage.delete(key: 'auth_token');
+      await _secureStorage.delete(key: 'user_role');
+      await _secureStorage.delete(key: 'instructor_status');
+      notifyListeners();
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
+    }
+  }
+  Future<bool> validateToken() async {
+    final token = await getToken();
+    if (token == null) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/auth/validate-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
 }
