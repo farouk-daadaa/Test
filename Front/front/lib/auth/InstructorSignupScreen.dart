@@ -296,18 +296,18 @@ class _InstructorSignupScreenState extends State<InstructorSignupScreen> {
         labelText: 'Phone Number',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         prefixIcon: Icon(Icons.phone, color: Color(0xFFDB2777)),
-        hintText: '+1234567890',
+        hintText: '12345678', // Updated hint
       ),
       keyboardType: TextInputType.phone,
       inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9]')), // Only numbers allowed
       ],
       validator: (value) {
         if (value == null || value.isEmpty) {
           return 'Please enter your phone number';
         }
-        if (!RegExp(r'^\+?[1-9][0-9]{7,14}$').hasMatch(value)) {
-          return 'Please enter a valid phone number';
+        if (!RegExp(r'^[0-9]{8}$').hasMatch(value)) { // Exactly 8 digits
+          return 'Phone number must be 8 digits';
         }
         return null;
       },
@@ -335,31 +335,39 @@ class _InstructorSignupScreenState extends State<InstructorSignupScreen> {
           Row(
             children: [
               Expanded(
-                child: RadioListTile<Gender>(
-                  title: Text('Male'),
-                  value: Gender.MALE,
-                  groupValue: _selectedGender,
-                  onChanged: (Gender? value) {
-                    setState(() {
-                      _selectedGender = value;
-                      _errorMessage = null;
-                    });
-                  },
-                  activeColor: Color(0xFFDB2777),
+                child: Row(
+                  children: [
+                    Radio<Gender>(
+                      value: Gender.MALE,
+                      groupValue: _selectedGender,
+                      onChanged: (Gender? value) {
+                        setState(() {
+                          _selectedGender = value;
+                          _errorMessage = null;
+                        });
+                      },
+                      activeColor: Color(0xFFDB2777),
+                    ),
+                    Text('Male'),
+                  ],
                 ),
               ),
               Expanded(
-                child: RadioListTile<Gender>(
-                  title: Text('Female'),
-                  value: Gender.FEMALE,
-                  groupValue: _selectedGender,
-                  onChanged: (Gender? value) {
-                    setState(() {
-                      _selectedGender = value;
-                      _errorMessage = null;
-                    });
-                  },
-                  activeColor: Color(0xFFDB2777),
+                child: Row(
+                  children: [
+                    Radio<Gender>(
+                      value: Gender.FEMALE,
+                      groupValue: _selectedGender,
+                      onChanged: (Gender? value) {
+                        setState(() {
+                          _selectedGender = value;
+                          _errorMessage = null;
+                        });
+                      },
+                      activeColor: Color(0xFFDB2777),
+                    ),
+                    Text('Female'),
+                  ],
                 ),
               ),
             ],
@@ -501,7 +509,7 @@ class _InstructorSignupScreenState extends State<InstructorSignupScreen> {
               'Application submitted! You will receive an email once reviewed.',
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 7),
           ),
         );
 

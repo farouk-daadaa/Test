@@ -210,18 +210,18 @@ class _SignupScreenState extends State<SignupScreen> {
         labelText: 'Phone Number',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         prefixIcon: Icon(Icons.phone, color: Color(0xFFDB2777)),
-        hintText: '+1234567890',
+        hintText: '12345678', // Updated hint
       ),
       keyboardType: TextInputType.phone,
       inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9]')), // Only numbers allowed
       ],
       validator: (value) {
         if (value == null || value.isEmpty) {
           return 'Please enter your phone number';
         }
-        if (!RegExp(r'^\+?[1-9][0-9]{7,14}$').hasMatch(value)) {
-          return 'Please enter a valid phone number';
+        if (!RegExp(r'^[0-9]{8}$').hasMatch(value)) { // Exactly 8 digits
+          return 'Phone number must be 8 digits';
         }
         return null;
       },

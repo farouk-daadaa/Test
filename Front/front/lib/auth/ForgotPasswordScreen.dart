@@ -168,18 +168,34 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
       try {
         await authService.forgotPassword(_emailController.text);
-        setState(() => _codeSent = true);
+        setState(() {
+          _codeSent = true;
+          _resendTimer = 30; // Reset timer
+        });
         _startResendTimer();
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Password reset code sent to your email.')),
+          SnackBar(content: Text('Password reset code sent to your email!')),
         );
       } catch (e) {
+        String errorMessage = e.toString();
+
+        if (errorMessage.contains('User not found')) {
+          errorMessage = 'No account found with this email.';
+        } else if (errorMessage.contains('code already requested')) {
+          errorMessage = 'Please wait before requesting a new code.';
+        } else {
+          errorMessage = 'Failed to send reset code. Please try again.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send reset code: ${e.toString()}')),
+          SnackBar(content: Text(errorMessage)),
         );
       } finally {
         setState(() => _isLoading = false);
       }
     }
   }
+
+
 }
