@@ -22,6 +22,8 @@ import project.security.JWTGenerator;
 
 import javax.annotation.PostConstruct;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import project.service.EmailService;
 import project.service.imageServiceImpl;
@@ -211,8 +213,9 @@ public class AuthController {
         // Send confirmation email
         emailService.sendInstructorSignUpEmail(user.getEmail());
 
-        return ResponseEntity.ok("Instructor registered successfully. Waiting for admin approval.");
-    }
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Instructor registered successfully. Waiting for admin approval.");
+        return ResponseEntity.ok(response);    }
 
 
     @DeleteMapping("delete/{username}")

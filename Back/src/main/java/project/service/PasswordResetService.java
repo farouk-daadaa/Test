@@ -7,6 +7,7 @@ import project.models.UserEntity;
 import project.repository.PasswordResetTokenRepository;
 import project.repository.UserRepository;
 
+import javax.transaction.Transactional;
 import java.util.Optional;
 import java.util.Random;
 
@@ -27,7 +28,7 @@ public class PasswordResetService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    // Step 1: Generate code and send email
+    @Transactional
     public void sendResetCode(String email) {
         Optional<UserEntity> optionalUser = userRepository.findByEmail(email);
         if (optionalUser.isEmpty()) {
@@ -36,15 +37,15 @@ public class PasswordResetService {
 
         UserEntity user = optionalUser.get();
 
-        // Delete any existing token for this user
+        // FIX: Ensure transaction when deleting existing reset tokens
         tokenRepository.deleteByUser(user);
 
-        // Generate a new 6-digit code
+        // Generate new reset code
         String code = generateCode();
         PasswordResetToken passwordResetToken = new PasswordResetToken(code, user);
         tokenRepository.save(passwordResetToken);
 
-        // Send reset email
+        // Send email
         emailService.sendPasswordResetEmail(user.getEmail(), code);
     }
 
@@ -54,19 +55,19 @@ public class PasswordResetService {
         return resetToken != null && !resetToken.isExpired();
     }
 
-    // Step 3: Reset password
+    @Transactional
     public void resetPassword(String code, String newPassword) {
         PasswordResetToken resetToken = tokenRepository.findByToken(code);
+
         if (resetToken == null || resetToken.isExpired()) {
-            throw new IllegalArgumentException("Invalid or expired code.");
+            throw new IllegalArgumentException("Invalid or expired reset code.");
         }
 
-        // Update user password
         UserEntity user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
-        // Delete used token
+        //  FIX: Delete the token AFTER the password update
         tokenRepository.delete(resetToken);
     }
 
