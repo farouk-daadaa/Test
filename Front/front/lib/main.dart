@@ -7,7 +7,7 @@ import 'auth/InstructorSignupScreen.dart';
 import 'auth/ResetPasswordScreen.dart';
 import 'auth/login_screen.dart';
 import 'auth/signup_screen.dart';
-import 'dashboard/AdminDashboardScreen.dart';
+import 'screens/admin/AdminDashboardScreen.dart';
 import 'dashboard/InstructorDashboardScreen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
