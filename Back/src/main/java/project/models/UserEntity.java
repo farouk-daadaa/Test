@@ -40,6 +40,7 @@ public class UserEntity {
 
     @OneToOne(mappedBy = "userEntity", cascade = CascadeType.ALL)
     @JsonIgnoreProperties("userEntity")
+    @JsonIgnore
     private UserRole userRole;
 
     @JsonIgnore
