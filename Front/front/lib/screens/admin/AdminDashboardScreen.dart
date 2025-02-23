@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
-import 'views/pending_instructors_view.dart';
 import 'views/all_instructors_view.dart';
 import 'views/students_view.dart';
 import 'views/categories_view.dart';
@@ -64,11 +63,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
               destinations: const [
                 NavigationRailDestination(
-                  icon: Icon(Icons.pending),
-                  selectedIcon: Icon(Icons.pending),
-                  label: Text('Pending\nInstructors'),
-                ),
-                NavigationRailDestination(
                   icon: Icon(Icons.school),
                   selectedIcon: Icon(Icons.school),
                   label: Text('All\nInstructors'),
@@ -102,10 +96,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         selectedItemColor: Color(0xFFDB2777),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.pending),
-            label: 'Pending',
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.school),
             label: 'Instructors',
           ),
@@ -132,12 +122,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _getView(int index) {
     switch (index) {
       case 0:
-        return PendingInstructorsView(key: ValueKey('pending'));
-      case 1:
         return AllInstructorsView(key: ValueKey('instructors'));
-      case 2:
+      case 1:
         return StudentsView(key: ValueKey('students'));
-      case 3:
+      case 2:
         return CategoriesView(key: ValueKey('categories'));
       default:
         return Center(child: Text('Select a view'));

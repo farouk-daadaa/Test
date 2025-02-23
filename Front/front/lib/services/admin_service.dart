@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:typed_data';
 
 class AdminService {
   static const String baseUrl = 'http://192.168.1.13:8080';
@@ -154,6 +155,40 @@ class AdminService {
 
     if (response.statusCode != 200) {
       throw Exception('Update failed: ${response.body}');
+    }
+  }
+  static String getImageUrl(int userId) {
+    return '$baseUrl/image/get/$userId';
+  }
+  Future<bool> checkImageExists(int userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/image/get/$userId'),
+        headers: await _getHeaders(),
+      );
+      print('Image check response: ${response.statusCode}');
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Image check error: $e');
+      return false;
+    }
+  }
+  // In your AdminService class, add this method:
+  Future<Uint8List?> getImageBytes(int userId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/image/get/$userId'),
+        headers: await _getHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      }
+      print('Image fetch failed with status: ${response.statusCode}');
+      return null;
+    } catch (e) {
+      print('Error fetching image: $e');
+      return null;
     }
   }
 }
