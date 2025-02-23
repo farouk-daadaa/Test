@@ -180,12 +180,12 @@ class _AllInstructorsViewState extends State<AllInstructorsView> {
             ),
           ),
           const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
             children: [
+              // Sort by label
               Text('Sort by:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              // Sort by name chip
               ChoiceChip(
                 label: Text('Name'),
                 selected: _sortBy == 'name',
@@ -199,6 +199,8 @@ class _AllInstructorsViewState extends State<AllInstructorsView> {
                 },
                 selectedColor: Color(0xFFDB2777).withOpacity(0.2),
               ),
+              const SizedBox(width: 8),
+              // Sort by date chip
               ChoiceChip(
                 label: Text('Date'),
                 selected: _sortBy == 'date',
@@ -212,6 +214,8 @@ class _AllInstructorsViewState extends State<AllInstructorsView> {
                 },
                 selectedColor: Color(0xFFDB2777).withOpacity(0.2),
               ),
+              const SizedBox(width: 8),
+              // Sort ascending/descending button
               IconButton(
                 icon: Icon(
                   _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
@@ -226,6 +230,7 @@ class _AllInstructorsViewState extends State<AllInstructorsView> {
                 tooltip: _sortAscending ? 'Sort ascending' : 'Sort descending',
               ),
               const SizedBox(width: 8),
+              // Status filter
               PopupMenuButton<String?>(
                 initialValue: _statusFilter,
                 tooltip: 'Filter by status',

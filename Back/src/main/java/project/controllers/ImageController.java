@@ -1,6 +1,7 @@
 package project.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -34,11 +35,14 @@ public class ImageController {
     }
 
     @GetMapping("/get/{idUser}")
-    public ResponseEntity<Image>getImageByidUser(@PathVariable Long idUser)
-    {
-        return imageServiceInter.getImage(idUser);
-
-
+    public ResponseEntity<byte[]> getImageByidUser(@PathVariable Long idUser) {
+        ResponseEntity<Image> imageResponse = imageServiceInter.getImage(idUser);
+        if (imageResponse.getBody() != null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.IMAGE_JPEG) // or MediaType.IMAGE_PNG depending on your image type
+                    .body(imageResponse.getBody().getPicByte());
+        }
+        return ResponseEntity.notFound().build();
     }
 
 

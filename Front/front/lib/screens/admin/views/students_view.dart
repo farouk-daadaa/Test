@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../services/admin_service.dart';
+import 'dart:typed_data';
 
 class StudentsView extends StatefulWidget {
   const StudentsView({Key? key}) : super(key: key);
@@ -16,7 +17,7 @@ class _StudentsViewState extends State<StudentsView> {
   bool _isLoading = false;
   String? _error;
   String _searchQuery = '';
-  String _sortBy = 'name'; // 'name', 'email', 'courses'
+  String _sortBy = 'name'; // 'name', 'courses'
   bool _sortAscending = true;
 
   @override
@@ -47,7 +48,7 @@ class _StudentsViewState extends State<StudentsView> {
   void _filterAndSortStudents() {
     _filteredStudents = _students.where((student) {
       final searchLower = _searchQuery.toLowerCase();
-      final name = student['name']?.toString().toLowerCase() ?? '';
+      final name = '${student['firstName'] ?? ''} ${student['lastName'] ?? ''}'.toLowerCase();
       final email = student['email']?.toString().toLowerCase() ?? '';
       return name.contains(searchLower) || email.contains(searchLower);
     }).toList();
@@ -55,23 +56,37 @@ class _StudentsViewState extends State<StudentsView> {
     _filteredStudents.sort((a, b) {
       switch (_sortBy) {
         case 'name':
-          return _sortAscending
-              ? a['name'].toString().compareTo(b['name'].toString())
-              : b['name'].toString().compareTo(a['name'].toString());
-        case 'email':
-          return _sortAscending
-              ? a['email'].toString().compareTo(b['email'].toString())
-              : b['email'].toString().compareTo(a['email'].toString());
+          final nameA = '${a['firstName'] ?? ''} ${a['lastName'] ?? ''}'.toLowerCase();
+          final nameB = '${b['firstName'] ?? ''} ${b['lastName'] ?? ''}'.toLowerCase();
+          return _sortAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
         case 'courses':
           final coursesA = (a['courses'] as List?)?.length ?? 0;
           final coursesB = (b['courses'] as List?)?.length ?? 0;
-          return _sortAscending
-              ? coursesA.compareTo(coursesB)
-              : coursesB.compareTo(coursesA);
+          return _sortAscending ? coursesA.compareTo(coursesB) : coursesB.compareTo(coursesA);
+        case 'creationDate':
+          DateTime? dateA = _parseDate(a['CreationDate']);
+          DateTime? dateB = _parseDate(b['CreationDate']);
+          dateA ??= DateTime.now();
+          dateB ??= DateTime.now();
+          return _sortAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
         default:
           return 0;
       }
     });
+  }
+
+  DateTime? _parseDate(dynamic dateValue) {
+    if (dateValue == null) return null;
+    try {
+      if (dateValue is int) {
+        return DateTime.fromMillisecondsSinceEpoch(dateValue);
+      } else if (dateValue is String) {
+        return DateTime.parse(dateValue);
+      }
+    } catch (e) {
+      print('Error parsing date: $e');
+    }
+    return null;
   }
 
   @override
@@ -180,12 +195,12 @@ class _StudentsViewState extends State<StudentsView> {
                 ),
                 SizedBox(width: 8),
                 ChoiceChip(
-                  label: Text('Email'),
-                  selected: _sortBy == 'email',
+                  label: Text('Courses'),
+                  selected: _sortBy == 'courses',
                   onSelected: (selected) {
                     if (selected) {
                       setState(() {
-                        _sortBy = 'email';
+                        _sortBy = 'courses';
                         _filterAndSortStudents();
                       });
                     }
@@ -194,12 +209,12 @@ class _StudentsViewState extends State<StudentsView> {
                 ),
                 SizedBox(width: 8),
                 ChoiceChip(
-                  label: Text('Courses'),
-                  selected: _sortBy == 'courses',
+                  label: Text('Creation Date'),
+                  selected: _sortBy == 'creationDate',
                   onSelected: (selected) {
                     if (selected) {
                       setState(() {
-                        _sortBy = 'courses';
+                        _sortBy = 'creationDate';
                         _filterAndSortStudents();
                       });
                     }
@@ -394,6 +409,10 @@ class _StudentsViewState extends State<StudentsView> {
   Widget _buildStudentCard(Map<String, dynamic> student, int index) {
     final courses = (student['courses'] as List?)?.length ?? 0;
     final isActive = student['isActive'] ?? false;
+    final firstName = student['firstName'] ?? '';
+    final lastName = student['lastName'] ?? '';
+    final name = '$firstName $lastName'.trim(); // Combine first and last name
+    final email = student['email'] ?? 'No email';
 
     return Card(
       elevation: 2,
@@ -407,48 +426,49 @@ class _StudentsViewState extends State<StudentsView> {
       ),
       child: ListTile(
         contentPadding: EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
-          child: Text(
-            student['name']?[0]?.toUpperCase() ?? '?',
-            style: TextStyle(
-              color: Color(0xFFDB2777),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-        title: Row(
-          children: [
-            Text(
-              student['name'] ?? 'Unknown',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            SizedBox(width: 8),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: isActive ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                isActive ? 'Active' : 'Inactive',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isActive ? Colors.green : Colors.grey,
+        leading: FutureBuilder<Uint8List?>(
+          future: student['id'] != null
+              ? _adminService.getImageBytes(student['id'])
+              : Future.value(null),
+          builder: (context, snapshot) {
+            return CircleAvatar(
+              radius: 24,
+              backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
+                strokeWidth: 2,
+              )
+                  : snapshot.hasData
+                  ? ClipOval(
+                child: Image.memory(
+                  snapshot.data!,
+                  fit: BoxFit.cover,
+                  width: 48,
+                  height: 48,
+                  errorBuilder: (context, error, stackTrace) {
+                    print('Error loading image: $error');
+                    return _buildFallbackAvatar(name);
+                  },
                 ),
-              ),
-            ),
-          ],
+              )
+                  : _buildFallbackAvatar(name),
+            );
+          },
+        ),
+        title: Text(
+          name,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(height: 4),
             Text(
-              student['email'] ?? 'No email',
+              email,
               style: TextStyle(color: Colors.grey[600]),
             ),
             SizedBox(height: 4),
@@ -487,17 +507,6 @@ class _StudentsViewState extends State<StudentsView> {
                 contentPadding: EdgeInsets.zero,
               ),
             ),
-            PopupMenuItem(
-              value: 'status',
-              child: ListTile(
-                leading: Icon(
-                  isActive ? Icons.person_off : Icons.person,
-                  color: Color(0xFFDB2777),
-                ),
-                title: Text(isActive ? 'Deactivate' : 'Activate'),
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
           ],
         ),
       ),
@@ -506,18 +515,195 @@ class _StudentsViewState extends State<StudentsView> {
         .slideX();
   }
 
+  Widget _buildFallbackAvatar(String name) {
+    return Text(
+      name.isNotEmpty ? name[0].toUpperCase() : '?',
+      style: TextStyle(
+        color: Color(0xFFDB2777),
+        fontWeight: FontWeight.bold,
+      ),
+    );
+  }
+
   void _handleMenuAction(String action, Map<String, dynamic> student) {
-    // Implement menu actions
     switch (action) {
       case 'view':
-      // TODO: Implement view details
+        _showStudentDetails(student);
         break;
       case 'courses':
       // TODO: Implement view courses
         break;
-      case 'status':
-      // TODO: Implement status toggle
-        break;
     }
+  }
+
+  void _showStudentDetails(Map<String, dynamic> student) {
+    final firstName = student['firstName'] ?? '';
+    final lastName = student['lastName'] ?? '';
+    final name = '$firstName $lastName'.trim(); // Combine first and last name
+    final email = student['email'] ?? 'No email';
+    final username = student['username'] ?? 'No username';
+    final gender = student['gender'] ?? 'No gender';
+    final phoneNumber = student['phoneNumber'] ?? 'No phone number';
+    final creationDate = _formatDate(student['CreationDate']);
+    final courses = (student['courses'] as List?)?.length ?? 0;
+    final isActive = student['isActive'] ?? false;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Container(
+          padding: EdgeInsets.all(24),
+          constraints: BoxConstraints(maxWidth: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
+                    child: FutureBuilder<Uint8List?>(
+                      future: student['id'] != null
+                          ? _adminService.getImageBytes(student['id'])
+                          : Future.value(null),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
+                          );
+                        }
+                        if (snapshot.hasData) {
+                          return ClipOval(
+                            child: Image.memory(
+                              snapshot.data!,
+                              width: 60,
+                              height: 60,
+                              fit: BoxFit.cover,
+                            ),
+                          );
+                        }
+                        return Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: Color(0xFFDB2777),
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isActive ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            isActive ? 'Active' : 'Inactive',
+                            style: TextStyle(
+                              color: isActive ? Colors.green : Colors.grey,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 24),
+              _buildDetailItem(Icons.email, 'Email', email),
+              _buildDetailItem(Icons.person, 'Username', username),
+              _buildDetailItem(Icons.transgender, 'Gender', gender),
+              _buildDetailItem(Icons.phone, 'Phone Number', phoneNumber),
+              _buildDetailItem(Icons.calendar_today, 'Creation Date', creationDate),
+              _buildDetailItem(Icons.book, 'Courses Enrolled', '$courses'),
+              SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Close',
+                      style: TextStyle(color: Color(0xFFDB2777)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic dateValue) {
+    if (dateValue == null) return 'Unknown';
+    try {
+      DateTime date;
+      if (dateValue is int) {
+        date = DateTime.fromMillisecondsSinceEpoch(dateValue);
+      } else if (dateValue is String) {
+        date = DateTime.parse(dateValue);
+      } else {
+        return 'Invalid date';
+      }
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (e) {
+      return 'Invalid date';
+    }
+  }
+
+  Widget _buildDetailItem(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: Color(0xFFDB2777)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
