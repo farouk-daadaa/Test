@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:typed_data';
@@ -13,6 +14,13 @@ class AdminService {
     return {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
+    };
+  }
+
+  Future<Map<String, String>> getImageHeaders() async {
+    final token = await _storage.read(key: 'auth_token');
+    return {
+      'Authorization': 'Bearer $token',  // No Content-Type for images
     };
   }
 
@@ -102,28 +110,98 @@ class AdminService {
     }
   }
 
-  // Add a new category
-  Future<Map<String, dynamic>> addCategory(String name) async {
-    final response = await http.post(
+  Future<Map<String, dynamic>> addCategory(String name, File? image) async {
+    var request = http.MultipartRequest(
+      'POST',
       Uri.parse('$baseUrl/api/categories'),
-      headers: await _getHeaders(),
-      body: json.encode({'name': name}),
     );
+    final headers = await _getHeaders();
+    headers.remove('Content-Type');
+    request.headers.addAll(headers);
+    request.fields['name'] = name;
+
+    if (image != null) {
+      final fileStream = http.ByteStream(image.openRead());
+      final length = await image.length();
+      final multipartFile = http.MultipartFile(
+        'image',
+        fileStream,
+        length,
+        filename: image.path.split('/').last,
+      );
+      request.files.add(multipartFile);
+    }
+
+    final response = await request.send();
+    final responseBody = await response.stream.bytesToString();
 
     if (response.statusCode == 201) {
-      return json.decode(response.body);
+      return json.decode(responseBody);
+    } else {
+      throw Exception('Failed to add category: $responseBody');
     }
-    throw Exception('Failed to add category: ${response.body}');
   }
 
-  // Fetch all categories
+  // Delete a category
+  Future<void> deleteCategory(int id) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/api/categories/$id'),
+      headers: await _getHeaders(),
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Delete failed: ${response.body}');
+    }
+  }
+
+
+  Future<void> updateCategory(int id, String newName) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/api/categories/$id'),
+      headers: await _getHeaders(),
+      body: json.encode({'name': newName}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Update failed: ${response.body}');
+    }
+  }
+  Future<Map<String, dynamic>> updateCategoryWithImage(int id, String newName, File? image) async {
+    var request = http.MultipartRequest(
+      'PUT',
+      Uri.parse('$baseUrl/api/categories/$id'),
+    );
+    final headers = await _getHeaders();
+    headers.remove('Content-Type');
+    request.headers.addAll(headers);
+    request.fields['name'] = newName;
+
+    if (image != null) {
+      final fileStream = http.ByteStream(image.openRead());
+      final length = await image.length();
+      final multipartFile = http.MultipartFile(
+        'image',
+        fileStream,
+        length,
+        filename: image.path.split('/').last,
+      );
+      request.files.add(multipartFile);
+    }
+
+    final response = await request.send();
+    final responseBody = await response.stream.bytesToString();
+
+    if (response.statusCode == 200) {
+      return json.decode(responseBody);
+    } else {
+      throw Exception('Failed to update category: $responseBody');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getAllCategories() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/categories'),
         headers: await _getHeaders(),
       );
-
       if (response.statusCode == 200) {
         return List<Map<String, dynamic>>.from(json.decode(response.body));
       } else {
@@ -134,29 +212,6 @@ class AdminService {
     }
   }
 
-  // Delete a category
-  Future<void> deleteCategory(int id) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/api/categories/$id'),
-      headers: await _getHeaders(),
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception('Delete failed: ${response.body}');
-    }
-  }
-
-  Future<void> updateCategory(int id, String newName) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/api/categories/$id'),
-      headers: await _getHeaders(),
-      body: json.encode({'name': newName}),
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Update failed: ${response.body}');
-    }
-  }
   static String getImageUrl(int userId) {
     return '$baseUrl/image/get/$userId';
   }

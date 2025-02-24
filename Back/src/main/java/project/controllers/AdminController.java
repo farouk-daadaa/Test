@@ -103,6 +103,10 @@ public class AdminController {
                     details.put("email", student.getEmail());
                     details.put("gender", student.getGender());
                     details.put("phoneNumber", student.getPhoneNumber());
+                    details.put("CreationDate",student.getCreationDate());
+                    details.put("image",student.getUserImage());
+
+
                     return details;
                 })
                 .collect(Collectors.toList());

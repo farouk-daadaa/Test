@@ -21,10 +21,10 @@ public class CourseCategory {
     @Column(unique = true, nullable = false)
     private String name;
 
+    @Column
+    private String imageUrl;
+
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL)
     @JsonIgnoreProperties("category")
     private List<Course> courses = new ArrayList<>();
-
-
 }
-
