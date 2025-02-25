@@ -13,6 +13,8 @@ import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/instructor/views/edit_course_view.dart';
 import 'services/auth_service.dart';
+import '/screens/instructor/views/course_details_screen.dart';
+
 
 void main() {
   SystemChrome.setSystemUIOverlayStyle(
@@ -113,6 +115,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
+        '/course-details': (context) => const CourseDetailsScreen(),
         '/edit-course': (context) => const EditCourseView(),
       },
     );
