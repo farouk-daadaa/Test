@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:front/services/course_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import'/screens/instructor/views/lessons_tab_view.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   const CourseDetailsScreen({Key? key}) : super(key: key);
@@ -12,6 +13,8 @@ class CourseDetailsScreen extends StatefulWidget {
 
 class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  int _lessonsCount = 0;
 
   @override
   void initState() {
@@ -135,10 +138,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                             Icon(Icons.book, size: 16, color: Colors.grey),
                             SizedBox(width: 4),
                             Text(
-                              '0 Lessons', // TODO: Add to CourseDTO
+                              '$_lessonsCount Lessons',
                               style: TextStyle(color: Colors.grey[700]),
                             ),
-
 
                           ],
                         ),
@@ -232,8 +234,15 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                           ),
                         ),
 
-                        // Lessons Tab (Placeholder)
-                        Center(child: Text('Lessons coming soon')),
+                        LessonsTabView(
+                          courseId: course.id!,
+                          onLessonsCountChanged: (count) {
+                            setState(() {
+                              // Update the lessons count in the UI
+                              _lessonsCount = count;
+                            });
+                          },
+                        ),
 
                         // Reviews Tab (Placeholder)
                         Center(child: Text('Reviews coming soon')),
