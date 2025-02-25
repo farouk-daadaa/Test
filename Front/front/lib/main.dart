@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/screens/HomeScreen.dart';
+import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
 import 'package:provider/provider.dart';
 import 'auth/ForgotPasswordScreen.dart';
 import 'auth/InstructorSignupScreen.dart';
@@ -8,10 +9,9 @@ import 'auth/ResetPasswordScreen.dart';
 import 'auth/login_screen.dart';
 import 'auth/signup_screen.dart';
 import 'screens/admin/AdminDashboardScreen.dart';
-import 'dashboard/InstructorDashboardScreen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
-
+import 'screens/instructor/views/edit_course_view.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -113,6 +113,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
+        '/edit-course': (context) => const EditCourseView(),
       },
     );
   }

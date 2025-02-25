@@ -2,14 +2,17 @@ package project.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import project.dto.CourseDTO;
 import project.service.CourseService;
 
 import javax.validation.Valid;
+import java.io.IOException;
 import java.util.List;
 
 @RestController
@@ -19,17 +22,25 @@ public class CourseController {
     @Autowired
     private CourseService courseService;
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal)")
-    public ResponseEntity<CourseDTO> createCourse(@Valid @RequestBody CourseDTO courseDTO, @RequestParam Long categoryId, Authentication authentication) {
-        CourseDTO createdCourse = courseService.createCourse(courseDTO, categoryId, authentication.getName());
+    public ResponseEntity<CourseDTO> createCourse(
+            @RequestPart("course") @Valid CourseDTO courseDTO,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            @RequestParam Long categoryId,
+            Authentication authentication) throws IOException {
+        CourseDTO createdCourse = courseService.createCourse(courseDTO, categoryId, authentication.getName(), image);
         return new ResponseEntity<>(createdCourse, HttpStatus.CREATED);
     }
 
-    @PutMapping("/{id}")
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal) and @userSecurity.isOwnerOfCourse(authentication.principal, #id)")
-    public ResponseEntity<CourseDTO> updateCourse(@PathVariable Long id, @Valid @RequestBody CourseDTO courseDTO, @RequestParam(required = false) Long categoryId) {
-        CourseDTO updatedCourse = courseService.updateCourse(id, courseDTO, categoryId);
+    public ResponseEntity<CourseDTO> updateCourse(
+            @PathVariable Long id,
+            @RequestPart("course") @Valid CourseDTO courseDTO,
+            @RequestPart(value = "image", required = false) MultipartFile image,
+            @RequestParam(required = false) Long categoryId) throws IOException {
+        CourseDTO updatedCourse = courseService.updateCourse(id, courseDTO, categoryId, image);
         return ResponseEntity.ok(updatedCourse);
     }
 
