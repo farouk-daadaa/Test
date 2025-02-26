@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
 import '../../../services/auth_service.dart';
 import '../../../services/lesson_service.dart';
+import 'package:video_player/video_player.dart';
 
 class LessonsTabView extends StatefulWidget {
   final int courseId;
@@ -58,7 +61,7 @@ class _LessonsTabViewState extends State<LessonsTabView> {
   }
 
   Future<void> _addLesson() async {
-    final result = await showDialog<LessonDTO>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => _LessonDialog(),
     );
@@ -66,7 +69,11 @@ class _LessonsTabViewState extends State<LessonsTabView> {
     if (result != null) {
       setState(() => _isLoading = true);
       try {
-        await _lessonService.addLesson(widget.courseId, result);
+        await _lessonService.addLesson(
+          widget.courseId,
+          result['title'] as String,
+          result['videoFile'] as File?,
+        );
         _loadLessons();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -77,7 +84,7 @@ class _LessonsTabViewState extends State<LessonsTabView> {
   }
 
   Future<void> _editLesson(LessonDTO lesson) async {
-    final result = await showDialog<LessonDTO>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => _LessonDialog(lesson: lesson),
     );
@@ -88,40 +95,9 @@ class _LessonsTabViewState extends State<LessonsTabView> {
         await _lessonService.updateLesson(
           widget.courseId,
           lesson.id!,
-          result,
+          result['title'] as String,
+          result['videoFile'] as File?,
         );
-        _loadLessons();
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _deleteLesson(LessonDTO lesson) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Lesson'),
-        content: Text('Are you sure you want to delete this lesson?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      setState(() => _isLoading = true);
-      try {
-        await _lessonService.deleteLesson(widget.courseId, lesson.id!);
         _loadLessons();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -165,7 +141,27 @@ class _LessonsTabViewState extends State<LessonsTabView> {
       children: [
         if (_lessons.isEmpty)
           Center(
-            child: Text('No lessons yet'),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.video_library_outlined, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No lessons yet',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Add your first lesson to get started',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
           )
         else
           ListView.builder(
@@ -184,9 +180,28 @@ class _LessonsTabViewState extends State<LessonsTabView> {
                     ),
                   ),
                   title: Text(lesson.title),
-                  subtitle: Text('Duration: ${lesson.duration} minutes'),
+                  subtitle: lesson.videoUrl != null
+                      ? Row(
+                    children: [
+                      Icon(Icons.video_library, size: 16, color: Colors.grey),
+                      SizedBox(width: 4),
+                      Text('Video available'),
+                    ],
+                  )
+                      : Text('No video uploaded'),
                   trailing: PopupMenuButton(
                     itemBuilder: (context) => [
+                      if (lesson.videoUrl != null)
+                        PopupMenuItem(
+                          value: 'preview',
+                          child: Row(
+                            children: [
+                              Icon(Icons.play_circle_outline, size: 20),
+                              SizedBox(width: 8),
+                              Text('Preview Video'),
+                            ],
+                          ),
+                        ),
                       PopupMenuItem(
                         value: 'edit',
                         child: Row(
@@ -208,11 +223,44 @@ class _LessonsTabViewState extends State<LessonsTabView> {
                         ),
                       ),
                     ],
-                    onSelected: (value) {
-                      if (value == 'edit') {
+                    onSelected: (value) async {
+                      if (value == 'preview' && lesson.videoUrl != null) {
+                        await showDialog(
+                          context: context,
+                          builder: (context) => _VideoPreviewDialog(videoUrl: lesson.videoUrl!),
+                        );
+                      } else if (value == 'edit') {
                         _editLesson(lesson);
                       } else if (value == 'delete') {
-                        _deleteLesson(lesson);
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text('Delete Lesson'),
+                            content: Text('Are you sure you want to delete this lesson?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: Text('Delete', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirm == true) {
+                          setState(() => _isLoading = true);
+                          try {
+                            await _lessonService.deleteLesson(widget.courseId, lesson.id!);
+                            _loadLessons();
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                            );
+                          }
+                        }
                       }
                     },
                   ),
@@ -226,9 +274,13 @@ class _LessonsTabViewState extends State<LessonsTabView> {
           child: FloatingActionButton(
             onPressed: _addLesson,
             backgroundColor: Color(0xFFDB2777),
-            child: Icon(Icons.add),
+            child: Icon(
+              Icons.add,
+              color: Colors.white,
+            ),
           ),
         ),
+
       ],
     );
   }
@@ -246,16 +298,51 @@ class _LessonDialog extends StatefulWidget {
 class __LessonDialogState extends State<_LessonDialog> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
-  final _durationController = TextEditingController();
-  final _videoUrlController = TextEditingController();
+  File? _videoFile;
+  String? _videoFileName;
 
   @override
   void initState() {
     super.initState();
     if (widget.lesson != null) {
       _titleController.text = widget.lesson!.title;
-      _durationController.text = widget.lesson!.duration.toString();
-      _videoUrlController.text = widget.lesson!.videoUrl ?? '';
+    }
+  }
+  Future<void> _pickVideo() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp4', 'mpeg', 'mov', 'avi'],
+        allowMultiple: false,
+      );
+
+      if (result != null) {
+        final file = File(result.files.single.path!);
+        final fileSize = await file.length();
+
+        // Check file size (500MB in bytes)
+        if (fileSize > 500 * 1024 * 1024) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Video file size must be less than 500MB'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        setState(() {
+          _videoFile = file;
+          _videoFileName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error selecting video: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -270,7 +357,10 @@ class __LessonDialogState extends State<_LessonDialog> {
           children: [
             TextFormField(
               controller: _titleController,
-              decoration: InputDecoration(labelText: 'Title'),
+              decoration: InputDecoration(
+                labelText: 'Title',
+                border: OutlineInputBorder(),
+              ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
                   return 'Please enter a title';
@@ -279,25 +369,52 @@ class __LessonDialogState extends State<_LessonDialog> {
               },
             ),
             SizedBox(height: 16),
-            TextFormField(
-              controller: _durationController,
-              decoration: InputDecoration(labelText: 'Duration (minutes)'),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter duration';
-                }
-                if (int.tryParse(value) == null) {
-                  return 'Please enter a valid number';
-                }
-                return null;
-              },
+            Text(
+              'Supported video formats: MP4, MPEG, MOV, AVI',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Maximum file size: 500MB',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+              ),
             ),
             SizedBox(height: 16),
-            TextFormField(
-              controller: _videoUrlController,
-              decoration: InputDecoration(labelText: 'Video URL '),
+            OutlinedButton.icon(
+              onPressed: _pickVideo,
+              icon: Icon(Icons.video_library),
+              label: Text(_videoFileName ?? 'Select Video'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Color(0xFFDB2777),
+              ),
             ),
+            if (_videoFileName != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _videoFileName!,
+                        style: TextStyle(color: Colors.grey[600]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -311,13 +428,10 @@ class __LessonDialogState extends State<_LessonDialog> {
             if (_formKey.currentState!.validate()) {
               Navigator.pop(
                 context,
-                LessonDTO(
-                  title: _titleController.text,
-                  duration: int.parse(_durationController.text),
-                  videoUrl: _videoUrlController.text.isEmpty
-                      ? null
-                      : _videoUrlController.text,
-                ),
+                {
+                  'title': _titleController.text,
+                  'videoFile': _videoFile,
+                },
               );
             }
           },
@@ -334,8 +448,115 @@ class __LessonDialogState extends State<_LessonDialog> {
   @override
   void dispose() {
     _titleController.dispose();
-    _durationController.dispose();
-    _videoUrlController.dispose();
+    super.dispose();
+  }
+}
+
+class _VideoPreviewDialog extends StatefulWidget {
+  final String videoUrl;
+
+  const _VideoPreviewDialog({Key? key, required this.videoUrl}) : super(key: key);
+
+  @override
+  __VideoPreviewDialogState createState() => __VideoPreviewDialogState();
+}
+
+class __VideoPreviewDialogState extends State<_VideoPreviewDialog> {
+  late VideoPlayerController _controller;
+  bool _isInitialized = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeVideo();
+  }
+  Future<void> _initializeVideo() async {
+    try {
+      // Construct the full URL by combining base URL with the video path
+      final baseUrl = 'http://192.168.1.13:8080';
+      final fullUrl = widget.videoUrl.startsWith('http')
+          ? widget.videoUrl
+          : '$baseUrl${widget.videoUrl}';
+
+      _controller = VideoPlayerController.network(fullUrl);
+
+      await _controller.initialize();
+      setState(() {
+        _isInitialized = true;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Error loading video: $e';
+      });
+      print('Video Error: $e'); // For debugging
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppBar(
+            title: Text('Video Preview'),
+            backgroundColor: Color(0xFFDB2777),
+            leading: IconButton(
+              icon: Icon(Icons.close),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else if (_isInitialized)
+            AspectRatio(
+              aspectRatio: _controller.value.aspectRatio,
+              child: VideoPlayer(_controller),
+            )
+          else
+            Container(
+              height: 200,
+              child: Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(Color(0xFFDB2777)),
+                ),
+              ),
+            ),
+          if (_isInitialized)
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow),
+                    onPressed: () {
+                      setState(() {
+                        _controller.value.isPlaying
+                            ? _controller.pause()
+                            : _controller.play();
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
     super.dispose();
   }
 }

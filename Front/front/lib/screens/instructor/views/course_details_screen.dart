@@ -31,6 +31,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final CourseDTO course = ModalRoute.of(context)!.settings.arguments as CourseDTO;
+    if (course.id == null) {
+      return const Center(child: Text("Invalid course"));
+    }
     final courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
 
     return Scaffold(

@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import javax.persistence.*;
 import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.Positive;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,9 +21,6 @@ public class Lesson {
     @NotBlank
     private String title;
 
-    @Positive
-    private int duration;
-
     private String videoUrl;
 
     @ManyToOne
@@ -35,7 +31,4 @@ public class Lesson {
     @OneToMany(mappedBy = "lesson", cascade = CascadeType.ALL)
     @JsonIgnoreProperties("lesson")
     private List<LessonProgress> lessonProgresses = new ArrayList<>();
-
-
 }
-
