@@ -4,8 +4,6 @@ import 'package:decimal/decimal.dart';
 import 'dart:convert';
 import 'package:http_parser/http_parser.dart';
 
-
-
 enum CourseLanguage { ENGLISH, FRENCH, TUNISIAN }
 enum CourseLevel { BEGINNER, INTERMEDIATE, EXPERT }
 enum PricingType { FREE, PAID }
@@ -46,73 +44,57 @@ class CourseDTO {
   factory CourseDTO.fromJson(Map<String, dynamic> json) {
     return CourseDTO(
       id: json['id'] != null ? json['id'] as int : 0,
-      // Default to 0 if null
       title: json['title'] ?? 'No Title',
       description: json['description'] ?? 'No Description',
       price: Decimal.parse(json['price']?.toString() ?? '0.0'),
       pricingType: PricingType.values.firstWhere(
-            (e) =>
-        e
-            .toString()
-            .split('.')
-            .last == json['pricingType'],
-        orElse: () => PricingType.FREE, // Default to FREE if null
+            (e) => e.toString().split('.').last == json['pricingType'],
+        orElse: () => PricingType.FREE,
       ),
       rating: json['rating'] != null ? (json['rating'] as num).toDouble() : 0.0,
-      totalReviews: json['totalReviews'] != null
-          ? json['totalReviews'] as int
-          : 0,
+      totalReviews: json['totalReviews'] != null ? json['totalReviews'] as int : 0,
       imageUrl: json['imageUrl'] ?? '',
       level: CourseLevel.values.firstWhere(
-            (e) =>
-        e
-            .toString()
-            .split('.')
-            .last == json['level'],
-        orElse: () => CourseLevel.BEGINNER, // Default level
+            (e) => e.toString().split('.').last == json['level'],
+        orElse: () => CourseLevel.BEGINNER,
       ),
       language: CourseLanguage.values.firstWhere(
-            (e) =>
-        e
-            .toString()
-            .split('.')
-            .last == json['language'],
-        orElse: () => CourseLanguage.ENGLISH, // Default language
+            (e) => e.toString().split('.').last == json['language'],
+        orElse: () => CourseLanguage.ENGLISH,
       ),
-      totalStudents: json['totalStudents'] != null
-          ? json['totalStudents'] as int
-          : 0,
-      lastUpdate: json['lastUpdate'] != null ? DateTime.tryParse(
-          json['lastUpdate']) : null,
+      totalStudents: json['totalStudents'] != null ? json['totalStudents'] as int : 0,
+      lastUpdate: json['lastUpdate'] != null ? DateTime.tryParse(json['lastUpdate']) : null,
       categoryId: json['categoryId'] != null ? json['categoryId'] as int : 0,
-      // Default category ID to 0
       instructorName: json['instructorName'],
     );
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'price': price.toString(),
+    'pricingType': pricingType.toString().split('.').last,
+    'imageUrl': imageUrl,
+    'level': level.toString().split('.').last,
+    'language': language.toString().split('.').last,
+    'categoryId': categoryId,
+  };
 
-  Map<String, dynamic> toJson() =>
-      {
-        'id': id,
-        'title': title,
-        'description': description,
-        'price': price.toString(),
-        'pricingType': pricingType
-            .toString()
-            .split('.')
-            .last,
-        'imageUrl': imageUrl,
-        'level': level
-            .toString()
-            .split('.')
-            .last,
-        'language': language
-            .toString()
-            .split('.')
-            .last,
-        'categoryId': categoryId,
-      };
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is CourseDTO &&
+              runtimeType == other.runtimeType &&
+              id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => title; // For proper display in dropdown
 }
+
 class CourseService {
   final Dio _dio;
   final String baseUrl;
@@ -121,6 +103,7 @@ class CourseService {
       : _dio = Dio(BaseOptions(
     baseUrl: baseUrl,
     headers: {'Content-Type': 'application/json'},
+    validateStatus: (status) => status! < 500,
   ));
 
   void setToken(String token) {
@@ -135,8 +118,8 @@ class CourseService {
             .map((json) => CourseDTO.fromJson(json))
             .toList();
       }
-      throw Exception('Failed to load courses');
-    } on DioError catch (e) {
+      throw Exception('Failed to load courses: ${response.statusCode}');
+    } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
         throw Exception('Unauthorized: Please log in again');
       }
@@ -146,16 +129,16 @@ class CourseService {
 
   Future<CourseDTO> createCourse({required CourseDTO course, File? imageFile}) async {
     try {
-      FormData formData = FormData.fromMap({
+      final formData = FormData.fromMap({
         'course': MultipartFile.fromString(
-          jsonEncode(course.toJson()), // Convert CourseDTO to JSON string
+          jsonEncode(course.toJson()),
           contentType: MediaType("application", "json"),
         ),
         if (imageFile != null)
           'image': await MultipartFile.fromFile(
             imageFile.path,
             filename: imageFile.path.split('/').last,
-            contentType: MediaType("image", "jpeg"), // Assuming image is JPEG, change if needed
+            contentType: MediaType("image", "jpeg"),
           ),
       });
 
@@ -169,13 +152,11 @@ class CourseService {
       if (response.statusCode == 201) {
         return CourseDTO.fromJson(response.data);
       }
-      throw Exception('Failed to create course');
+      throw Exception('Failed to create course: ${response.statusCode}');
     } on DioException catch (e) {
       throw Exception('Failed to create course: ${e.message}');
     }
   }
-
-
 
   Future<CourseDTO> updateCourse({
     required CourseDTO course,
@@ -184,7 +165,7 @@ class CourseService {
     try {
       final formData = FormData.fromMap({
         'course': MultipartFile.fromString(
-          jsonEncode(course.toJson()), // Use jsonEncode here
+          jsonEncode(course.toJson()),
           contentType: MediaType("application", "json"),
         ),
         if (imageFile != null)
@@ -207,7 +188,7 @@ class CourseService {
       if (response.statusCode == 200) {
         return CourseDTO.fromJson(response.data);
       }
-      throw Exception('Failed to update course');
+      throw Exception('Failed to update course: ${response.statusCode}');
     } on DioException catch (e) {
       throw Exception('Failed to update course: ${e.message}');
     }
@@ -217,9 +198,9 @@ class CourseService {
     try {
       final response = await _dio.delete('/api/courses/$courseId');
       if (response.statusCode != 204) {
-        throw Exception('Failed to delete course');
+        throw Exception('Failed to delete course: ${response.statusCode}');
       }
-    } on DioError catch (e) {
+    } on DioException catch (e) {
       if (e.response?.statusCode == 403) {
         throw Exception('Not authorized to delete this course');
       }
@@ -233,8 +214,8 @@ class CourseService {
       if (response.statusCode == 200) {
         return CourseDTO.fromJson(response.data);
       }
-      throw Exception('Failed to load course details');
-    } on DioError catch (e) {
+      throw Exception('Failed to load course details: ${response.statusCode}');
+    } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
         throw Exception('Course not found');
       }
@@ -246,8 +227,6 @@ class CourseService {
     if (imageUrl.startsWith('http')) return imageUrl;
 
     final String fullUrl = '$baseUrl$imageUrl';
-
     return '$fullUrl?token=${_dio.options.headers["Authorization"]}';
   }
-
 }

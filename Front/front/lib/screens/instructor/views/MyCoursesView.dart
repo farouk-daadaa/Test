@@ -341,10 +341,9 @@ class _MyCoursesViewState extends State<MyCoursesView> {
                     children: [
                       _buildInfoChip(
                         Icons.attach_money,
-                        course.pricingType == PricingType.FREE
-                            ? 'Free'
-                            : '\$${course.price}',
+                        course.pricingType == PricingType.FREE ? 'Free' : course.price.toString(),
                       ),
+
                       const SizedBox(width: 8),
                       _buildInfoChip(
                         Icons.school,

@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:front/screens/instructor/views/video_player_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import '../../../services/auth_service.dart';
 import '../../../services/lesson_service.dart';
-import 'package:video_player/video_player.dart';
-
 class LessonsTabView extends StatefulWidget {
   final int courseId;
   final Function(int) onLessonsCountChanged;
@@ -172,6 +171,17 @@ class _LessonsTabViewState extends State<LessonsTabView> {
               return Card(
                 margin: EdgeInsets.only(bottom: 12),
                 child: ListTile(
+                  onTap: lesson.videoUrl != null ? () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => VideoPlayerScreen(
+                          videoUrl: lesson.videoUrl!,
+                          lessonTitle: lesson.title,
+                        ),
+                      ),
+                    );
+                  } : null,
                   leading: CircleAvatar(
                     backgroundColor: Color(0xFFDB2777),
                     child: Text(
@@ -224,12 +234,7 @@ class _LessonsTabViewState extends State<LessonsTabView> {
                       ),
                     ],
                     onSelected: (value) async {
-                      if (value == 'preview' && lesson.videoUrl != null) {
-                        await showDialog(
-                          context: context,
-                          builder: (context) => _VideoPreviewDialog(videoUrl: lesson.videoUrl!),
-                        );
-                      } else if (value == 'edit') {
+                      if (value == 'edit') {
                         _editLesson(lesson);
                       } else if (value == 'delete') {
                         final confirm = await showDialog<bool>(
@@ -452,111 +457,4 @@ class __LessonDialogState extends State<_LessonDialog> {
   }
 }
 
-class _VideoPreviewDialog extends StatefulWidget {
-  final String videoUrl;
 
-  const _VideoPreviewDialog({Key? key, required this.videoUrl}) : super(key: key);
-
-  @override
-  __VideoPreviewDialogState createState() => __VideoPreviewDialogState();
-}
-
-class __VideoPreviewDialogState extends State<_VideoPreviewDialog> {
-  late VideoPlayerController _controller;
-  bool _isInitialized = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeVideo();
-  }
-  Future<void> _initializeVideo() async {
-    try {
-      // Construct the full URL by combining base URL with the video path
-      final baseUrl = 'http://192.168.1.13:8080';
-      final fullUrl = widget.videoUrl.startsWith('http')
-          ? widget.videoUrl
-          : '$baseUrl${widget.videoUrl}';
-
-      _controller = VideoPlayerController.network(fullUrl);
-
-      await _controller.initialize();
-      setState(() {
-        _isInitialized = true;
-      });
-    } catch (e) {
-      setState(() {
-        _error = 'Error loading video: $e';
-      });
-      print('Video Error: $e'); // For debugging
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppBar(
-            title: Text('Video Preview'),
-            backgroundColor: Color(0xFFDB2777),
-            leading: IconButton(
-              icon: Icon(Icons.close),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
-              ),
-            )
-          else if (_isInitialized)
-            AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
-            )
-          else
-            Container(
-              height: 200,
-              child: Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation(Color(0xFFDB2777)),
-                ),
-              ),
-            ),
-          if (_isInitialized)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: Icon(_controller.value.isPlaying ? Icons.pause : Icons.play_arrow),
-                    onPressed: () {
-                      setState(() {
-                        _controller.value.isPlaying
-                            ? _controller.pause()
-                            : _controller.play();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-}

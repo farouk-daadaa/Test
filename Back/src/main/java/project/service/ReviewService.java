@@ -22,13 +22,15 @@ public class ReviewService {
     private ReviewRepository reviewRepository;
 
     @Autowired
+    private EnrollmentRepository enrollmentRepository;
+
+    @Autowired
     private CourseRepository courseRepository;
 
     @Autowired
     private UserRepository userRepository;
 
-    @Autowired
-    private EnrollmentRepository enrollmentRepository;
+
 
     @Transactional
     public ReviewDTO createReview(Long courseId, Long userId, ReviewDTO reviewDTO) {

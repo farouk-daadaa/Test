@@ -43,6 +43,7 @@ dependencies:
   decimal: ^2.3.3
   video_player: ^2.7.2
   file_picker: ^5.5.0
+  fl_chart: ^0.65.0
 
 
 

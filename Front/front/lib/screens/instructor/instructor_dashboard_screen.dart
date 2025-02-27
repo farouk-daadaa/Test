@@ -117,7 +117,6 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
       child: _getView(_selectedIndex),
     );
   }
-
   Widget _getView(int index) {
     switch (index) {
       case 0:
@@ -125,10 +124,13 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
       case 1:
         return CreateCourseView(key: ValueKey('create'));
       case 2:
-        return CourseAnalyticsView(key: ValueKey('analytics'));
-      default:
+        return CourseAnalyticsView(
+          key: ValueKey('analytics'),
+        );
+        default:
         return Center(child: Text('Select a view'));
     }
   }
-}
+  }
+
 
