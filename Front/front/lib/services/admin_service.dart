@@ -230,6 +230,9 @@ class AdminService with ChangeNotifier { // Add `with ChangeNotifier`
       return false;
     }
   }
+  static String getCategoryImageUrl(String imagePath) {
+    return '$baseUrl$imagePath';
+  }
 
   // In your AdminService class, add this method:
   Future<Uint8List?> getImageBytes(int userId) async {

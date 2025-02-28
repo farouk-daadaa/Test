@@ -69,6 +69,8 @@ class CategoriesSection extends StatelessWidget {
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
                   final category = categories[index];
+                  final imageUrl = AdminService.getCategoryImageUrl(category['imageUrl']);
+
                   return Column(
                     children: [
                       Container(
@@ -77,11 +79,17 @@ class CategoriesSection extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
+                          image: DecorationImage(
+                            image: NetworkImage(imageUrl),
+                            fit: BoxFit.cover,
+                          ),
                         ),
-                        child: Icon(
+                        child: category['imageUrl'] == null
+                            ? Icon(
                           _getCategoryIcon(category['name']),
                           color: AppColors.primary,
-                        ),
+                        )
+                            : null,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -101,17 +109,7 @@ class CategoriesSection extends StatelessWidget {
 
   // Helper method to map category names to icons
   IconData _getCategoryIcon(String categoryName) {
-    switch (categoryName.toLowerCase()) {
-      case 'art':
-        return Icons.palette;
-      case 'coding':
-        return Icons.code;
-      case 'marketing':
-        return Icons.trending_up;
-      case 'business':
-        return Icons.business;
-      default:
-        return Icons.category; // Default icon for unknown categories
-    }
+    return Icons.category;
   }
+
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../constants/colors.dart';
+import '../../services/admin_service.dart';
 
 class AllCategoriesScreen extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
@@ -10,58 +11,90 @@ class AllCategoriesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('All Categories'),
-        backgroundColor: AppColors.primary,
+        title: const Text(
+          'Category',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          final category = categories[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _getCategoryIcon(category['name']),
-                  color: AppColors.primary,
-                ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 0.8, // Adjusted to accommodate image and text
+          ),
+          itemCount: categories.length,
+          itemBuilder: (context, index) {
+            final category = categories[index];
+            final imageUrl = AdminService.getCategoryImageUrl(category['imageUrl']);
+
+            return Container(
+              constraints: const BoxConstraints(
+                minHeight: 100,
+                maxHeight: 120,
               ),
-              title: Text(
-                category['name'],
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.blue.shade100,
+                      ),
+                      child: category['imageUrl'] != null
+                          ? ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              _getCategoryIcon(category['name']),
+                              color: Colors.blue,
+                              size: 30,
+                            );
+                          },
+                        ),
+                      )
+                          : Icon(
+                        _getCategoryIcon(category['name']),
+                        color: Colors.blue,
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: Text(
+                      category['name'],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-              onTap: () {
-                // Handle category tap (e.g., navigate to category details)
-              },
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 
-  // Reuse the same icon mapping logic
   IconData _getCategoryIcon(String categoryName) {
-    switch (categoryName.toLowerCase()) {
-      case 'art':
-        return Icons.palette;
-      case 'coding':
-        return Icons.code;
-      case 'marketing':
-        return Icons.trending_up;
-      case 'business':
-        return Icons.business;
-      default:
-        return Icons.category;
-    }
+    return Icons.category;
   }
 }
