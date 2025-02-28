@@ -209,16 +209,20 @@ class _LoginScreenState extends State<LoginScreen> {
         onPressed: () {
           Navigator.pushNamed(context, '/forgot-password');
         },
-        child: Text(
-          'Forgot Password?',
-          style: TextStyle(
-            color: Color(0xFFDB2777),
-            fontWeight: FontWeight.w500,
+        child: Center(
+          child: Text(
+            'Forgot Password?',
+            style: TextStyle(
+              color: Color(0xFFDB2777),
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
           ),
         ),
       ),
     );
   }
+
 
   Widget _buildSignupOption() {
     return Row(

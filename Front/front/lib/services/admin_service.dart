@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart'; // Import for ChangeNotifier
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:typed_data';
 
-class AdminService {
+class AdminService with ChangeNotifier { // Add `with ChangeNotifier`
   static const String baseUrl = 'http://192.168.1.13:8080';
   final _storage = const FlutterSecureStorage();
 
@@ -153,7 +154,6 @@ class AdminService {
     }
   }
 
-
   Future<void> updateCategory(int id, String newName) async {
     final response = await http.put(
       Uri.parse('$baseUrl/api/categories/$id'),
@@ -164,6 +164,7 @@ class AdminService {
       throw Exception('Update failed: ${response.body}');
     }
   }
+
   Future<Map<String, dynamic>> updateCategoryWithImage(int id, String newName, File? image) async {
     var request = http.MultipartRequest(
       'PUT',
@@ -215,6 +216,7 @@ class AdminService {
   static String getImageUrl(int userId) {
     return '$baseUrl/image/get/$userId';
   }
+
   Future<bool> checkImageExists(int userId) async {
     try {
       final response = await http.get(
@@ -228,6 +230,7 @@ class AdminService {
       return false;
     }
   }
+
   // In your AdminService class, add this method:
   Future<Uint8List?> getImageBytes(int userId) async {
     try {

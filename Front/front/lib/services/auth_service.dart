@@ -10,10 +10,13 @@ class AuthService with ChangeNotifier {
   String? _token;
   String? _userRole;
   String? _instructorStatus;
+  String? _username; // Added username property
 
+  // Getters
   String? get token => _token;
   String? get userRole => _userRole;
   String? get instructorStatus => _instructorStatus;
+  String? get username => _username; // Added username getter
 
   Future<bool> _checkInternetConnection() async {
     var connectivityResult = await (Connectivity().checkConnectivity());
@@ -34,6 +37,7 @@ class AuthService with ChangeNotifier {
     _token = await _secureStorage.read(key: 'auth_token');
     _userRole = await _secureStorage.read(key: 'user_role');
     _instructorStatus = await _secureStorage.read(key: 'instructor_status');
+    _username = await _secureStorage.read(key: 'user_name'); // Load username
     notifyListeners();
   }
 
@@ -64,6 +68,12 @@ class AuthService with ChangeNotifier {
               if (_userRole == 'INSTRUCTOR' && userData.containsKey('instructor')) {
                 _instructorStatus = userData['instructor']['status'];
                 await _secureStorage.write(key: 'instructor_status', value: _instructorStatus);
+              }
+
+              // Store username if available
+              if (userData.containsKey('username')) {
+                _username = userData['username'].toString();
+                await _secureStorage.write(key: 'user_name', value: _username);
               }
             }
           }
@@ -192,15 +202,15 @@ class AuthService with ChangeNotifier {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Confirm Logout'),
-          content: Text('Are you sure you want to log out?'),
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to log out?'),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancel'),
+              child: const Text('Cancel'),
               onPressed: () => Navigator.of(context).pop(false),
             ),
             TextButton(
-              child: Text('Yes'),
+              child: const Text('Yes'),
               onPressed: () => Navigator.of(context).pop(true),
             ),
           ],
@@ -212,13 +222,16 @@ class AuthService with ChangeNotifier {
       _token = null;
       _userRole = null;
       _instructorStatus = null;
+      _username = null; // Clear username
       await _secureStorage.delete(key: 'auth_token');
       await _secureStorage.delete(key: 'user_role');
       await _secureStorage.delete(key: 'instructor_status');
+      await _secureStorage.delete(key: 'user_name'); // Delete stored username
       notifyListeners();
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
     }
   }
+
   Future<bool> validateToken() async {
     final token = await getToken();
     if (token == null) return false;
@@ -237,5 +250,4 @@ class AuthService with ChangeNotifier {
       return false;
     }
   }
-
 }

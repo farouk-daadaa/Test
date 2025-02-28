@@ -229,4 +229,19 @@ class CourseService {
     final String fullUrl = '$baseUrl$imageUrl';
     return '$fullUrl?token=${_dio.options.headers["Authorization"]}';
   }
+
+  Future<List<CourseDTO>> getAllCourses() async {
+    try {
+      final response = await _dio.get('/api/courses');
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((json) => CourseDTO.fromJson(json))
+            .toList();
+      }
+      throw Exception('Failed to load courses: ${response.statusCode}');
+    } on DioException catch (e) {
+      throw Exception('Failed to load courses: ${e.message}');
+    }
+  }
+
 }

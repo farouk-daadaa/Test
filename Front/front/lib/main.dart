@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:front/screens/HomeScreen.dart';
+import 'package:front/screens/admin/AdminDashboardScreen.dart';
 import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
+import 'package:front/screens/instructor/views/course_details_screen.dart';
+import 'package:front/screens/instructor/views/edit_course_view.dart';
+import 'package:front/screens/splash_screen.dart';
+import 'package:front/screens/welcome_screen.dart';
 import 'package:provider/provider.dart';
 import 'auth/ForgotPasswordScreen.dart';
 import 'auth/InstructorSignupScreen.dart';
 import 'auth/ResetPasswordScreen.dart';
 import 'auth/login_screen.dart';
 import 'auth/signup_screen.dart';
-import 'screens/admin/AdminDashboardScreen.dart';
-import 'screens/splash_screen.dart';
-import 'screens/welcome_screen.dart';
-import 'screens/instructor/views/edit_course_view.dart';
-import 'services/auth_service.dart';
-import '/screens/instructor/views/course_details_screen.dart';
-
+import 'services/admin_service.dart'; // Import your AdminService
+import 'services/auth_service.dart'; // Import your AuthService
+import 'screens/homepage/HomeScreen.dart'; // Import your HomeScreen
 
 void main() {
   SystemChrome.setSystemUIOverlayStyle(
@@ -31,8 +31,15 @@ class AppRoot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AuthService>(
-      create: (_) => AuthService()..loadToken(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthService>(
+          create: (_) => AuthService()..loadToken(),
+        ),
+        ChangeNotifierProvider<AdminService>(
+          create: (_) => AdminService(), // Provide AdminService
+        ),
+      ],
       child: const MyApp(),
     );
   }
