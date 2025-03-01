@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
+import '../../services/course_service.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,6 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
 
   void _onItemTapped(int index) {
     setState(() {
@@ -115,17 +116,86 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         SizedBox(
           height: 280,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: 5,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              return const CourseCard(
-                title: 'Flutter Development Masterclass',
-                rating: 4.8,
-                price: '\$99.99',
-                studentCount: '2.5k students',
+          child: FutureBuilder<List<CourseDTO>>(
+            future: _getCoursesWithToken(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error loading courses\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.school_outlined, size: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No courses available',
+                        style: TextStyle(
+                          color: AppColors.textGray,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: snapshot.data!.length,
+                itemBuilder: (context, index) {
+                  final course = snapshot.data![index];
+                  return CourseCard(
+                    course: course,
+                    courseService: courseService,
+                    onTap: () {
+                      // Navigate to course details
+                      Navigator.pushNamed(
+                        context,
+                        '/course-details',
+                        arguments: course.id,
+                      );
+                    },
+                    onBookmarkChanged: (isBookmarked) {
+                      // TODO: Implement bookmark functionality
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isBookmarked
+                                ? 'Course added to bookmarks'
+                                : 'Course removed from bookmarks',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  );
+                },
               );
             },
           ),
@@ -134,6 +204,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<List<CourseDTO>> _getCoursesWithToken() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final token = await authService.getToken();
+
+    if (token == null) {
+      throw Exception('User not authenticated');
+    }
+
+    courseService.setToken(token);
+    final courses = await courseService.getAllCourses();
+
+    // Add this sorting logic
+    courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
+
+    return courses;
+  }
   Widget _buildContinueLearning() {
     return Column(
       children: [
