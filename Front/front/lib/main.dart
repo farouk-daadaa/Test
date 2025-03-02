@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/screens/admin/AdminDashboardScreen.dart';
+import 'package:front/screens/homepage/course_details_screen.dart';
 import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
-import 'package:front/screens/instructor/views/course_details_screen.dart';
 import 'package:front/screens/instructor/views/edit_course_view.dart';
 import 'package:front/screens/splash_screen.dart';
 import 'package:front/screens/welcome_screen.dart';
@@ -12,10 +12,9 @@ import 'auth/InstructorSignupScreen.dart';
 import 'auth/ResetPasswordScreen.dart';
 import 'auth/login_screen.dart';
 import 'auth/signup_screen.dart';
-import 'services/admin_service.dart'; // Import your AdminService
-import 'services/auth_service.dart'; // Import your AuthService
-import 'screens/homepage/HomeScreen.dart'; // Import your HomeScreen
-
+import 'services/admin_service.dart';
+import 'services/auth_service.dart';
+import 'screens/homepage/HomeScreen.dart';
 void main() {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -122,7 +121,18 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
-        '/course-details': (context) => const CourseDetailsScreen(),
+        '/course-details': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments;
+
+          if (args is int) {
+            return CourseDetailsScreen(courseId: args);
+          } else if (args is Map<String, dynamic>) {
+            return CourseDetailsScreen(courseId: args['courseId']);
+          } else {
+            throw Exception("Invalid arguments for /course-details");
+          }
+        },
+
         '/edit-course': (context) => const EditCourseView(),
       },
     );

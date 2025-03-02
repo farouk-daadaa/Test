@@ -1,19 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../constants/colors.dart';
 import '../../services/course_service.dart';
-
+import '../instructor/views/course_details_screen.dart';
 
 class CourseCard extends StatefulWidget {
   final CourseDTO course;
   final VoidCallback? onTap;
   final Function(bool)? onBookmarkChanged;
   final bool isBookmarked;
-  final CourseService courseService; // Add this
+  final CourseService courseService;
 
   const CourseCard({
     Key? key,
     required this.course,
-    required this.courseService, // Add this
+    required this.courseService,
     this.onTap,
     this.onBookmarkChanged,
     this.isBookmarked = false,
@@ -39,7 +39,17 @@ class _CourseCardState extends State<CourseCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.onTap,
+      onTap: () {
+        if (widget.onTap != null) {
+          widget.onTap!();
+        } else {
+          Navigator.pushNamed(
+            context,
+            '/course-details',
+            arguments: {'courseId': widget.course.id},
+          );
+        }
+      },
       child: Container(
         width: 220,
         margin: const EdgeInsets.all(8),
