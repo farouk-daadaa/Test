@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../constants/colors.dart';
+import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../instructor/views/course_details_screen.dart';
 
@@ -9,11 +10,13 @@ class CourseCard extends StatefulWidget {
   final Function(bool)? onBookmarkChanged;
   final bool isBookmarked;
   final CourseService courseService;
+  final BookmarkService bookmarkService;
 
   const CourseCard({
     Key? key,
     required this.course,
     required this.courseService,
+    required this.bookmarkService,
     this.onTap,
     this.onBookmarkChanged,
     this.isBookmarked = false,
@@ -25,30 +28,61 @@ class CourseCard extends StatefulWidget {
 
 class _CourseCardState extends State<CourseCard> {
   late bool _isBookmarked;
+  bool _isProcessingBookmark = false;
 
   @override
   void initState() {
     super.initState();
-    _isBookmarked = widget.isBookmarked;
+    _isBookmarked = widget.course.isBookmarked;
   }
-
   String _getImageUrl() {
     return widget.courseService.getImageUrl(widget.course.imageUrl);
+  }
+
+  Future<void> _toggleBookmark() async {
+    if (_isProcessingBookmark) return;
+
+    setState(() => _isProcessingBookmark = true);
+    final newState = !_isBookmarked;
+    final courseId = widget.course.id!;
+
+    try {
+      if (newState) {
+        await widget.bookmarkService.addBookmark(courseId);
+      } else {
+        await widget.bookmarkService.removeBookmark(courseId);
+      }
+
+      // Update local state only after successful API call
+      setState(() => _isBookmarked = newState);
+      widget.onBookmarkChanged?.call(newState);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update bookmark: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _toggleBookmark,
+          ),
+        ),
+      );
+      // Revert UI state if operation failed
+      setState(() => _isBookmarked = !newState);
+    } finally {
+      setState(() => _isProcessingBookmark = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        if (widget.onTap != null) {
-          widget.onTap!();
-        } else {
-          Navigator.pushNamed(
-            context,
-            '/course-details',
-            arguments: {'courseId': widget.course.id},
-          );
-        }
+      onTap: widget.onTap ?? () {
+        Navigator.pushNamed(
+          context,
+          '/course-details',
+          arguments: {'courseId': widget.course.id},
+        );
       },
       child: Container(
         width: 220,
@@ -116,12 +150,7 @@ class _CourseCardState extends State<CourseCard> {
                   top: 8,
                   right: 8,
                   child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _isBookmarked = !_isBookmarked;
-                        widget.onBookmarkChanged?.call(_isBookmarked);
-                      });
-                    },
+                    onTap: _toggleBookmark,
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -136,7 +165,16 @@ class _CourseCardState extends State<CourseCard> {
                           ),
                         ],
                       ),
-                      child: Icon(
+                      child: _isProcessingBookmark
+                          ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                          : Icon(
                         _isBookmarked ? Icons.bookmark : Icons.bookmark_border,
                         color: _isBookmarked ? AppColors.primary : Colors.grey,
                         size: 20,

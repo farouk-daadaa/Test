@@ -23,6 +23,8 @@ class CourseDTO {
   final DateTime? lastUpdate;
   final int categoryId;
   final String? instructorName;
+  bool isBookmarked;
+
 
   CourseDTO({
     this.id,
@@ -39,6 +41,7 @@ class CourseDTO {
     this.lastUpdate,
     required this.categoryId,
     this.instructorName,
+    this.isBookmarked = false,
   });
 
   factory CourseDTO.fromJson(Map<String, dynamic> json) {
@@ -66,6 +69,7 @@ class CourseDTO {
       lastUpdate: json['lastUpdate'] != null ? DateTime.tryParse(json['lastUpdate']) : null,
       categoryId: json['categoryId'] != null ? json['categoryId'] as int : 0,
       instructorName: json['instructorName'],
+      isBookmarked: json['isBookmarked'] ?? false,
     );
   }
 
@@ -79,6 +83,7 @@ class CourseDTO {
     'level': level.toString().split('.').last,
     'language': language.toString().split('.').last,
     'categoryId': categoryId,
+    'isBookmarked': isBookmarked,
   };
 
   @override

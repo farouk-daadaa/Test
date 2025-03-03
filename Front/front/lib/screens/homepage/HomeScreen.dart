@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
+import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
@@ -18,6 +19,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
+  final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
 
   void _onItemTapped(int index) {
     setState(() {
@@ -173,8 +175,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   return CourseCard(
                     course: course,
                     courseService: courseService,
+                    bookmarkService: bookmarkService,
+                    isBookmarked: course.isBookmarked,
                     onTap: () {
-                      // Navigate to course details
                       Navigator.pushNamed(
                         context,
                         '/course-details',
@@ -182,7 +185,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     },
                     onBookmarkChanged: (isBookmarked) {
-                      // TODO: Implement bookmark functionality
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
@@ -213,13 +215,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     courseService.setToken(token);
+    bookmarkService.setToken(token);
+
+    // Fetch courses and bookmarks
     final courses = await courseService.getAllCourses();
+    final bookmarks = await bookmarkService.getBookmarkedCourses();
 
-    // Add this sorting logic
+    // Create a set of bookmarked course IDs
+    final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
+
+    // Update bookmark status for each course
+    for (final course in courses) {
+      course.isBookmarked = bookmarkedIds.contains(course.id);
+    }
+
+    // Sort courses by rating
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
-
     return courses;
   }
+
   Widget _buildContinueLearning() {
     return Column(
       children: [

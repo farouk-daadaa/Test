@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
-import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/course_service.dart';
 import '../../services/lesson_service.dart';
-import '../../services/review_service.dart'; // Import the ReviewService
+import '../../services/review_service.dart';
+import '../../services/enrollment_service.dart';
 import '../instructor/views/video_player_screen.dart';
-
+import'payment_page.dart';
 class CourseDetailsScreen extends StatefulWidget {
   final int courseId;
 
@@ -26,15 +26,18 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late TabController _tabController;
   late CourseService _courseService;
   late LessonService _lessonService;
-  late ReviewService _reviewService; // Add ReviewService
+  late ReviewService _reviewService;
+  late EnrollmentService _enrollmentService;
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
-  List<ReviewDTO> _reviews = []; // Add reviews list
+  List<ReviewDTO> _reviews = [];
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
-  bool _isReviewsLoading = false; // Add reviews loading state
-  String? _reviewsErrorMessage; // Add reviews error message
+  bool _isReviewsLoading = false;
+  String? _reviewsErrorMessage;
+  bool _isEnrolling = false;
+  bool _isEnrolled = false;
 
   @override
   void initState() {
@@ -58,12 +61,13 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
 
     _courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
     _lessonService = LessonService(baseUrl: 'http://192.168.1.13:8080');
-    _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080'); // Initialize ReviewService
+    _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
+    _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
 
-    // Set tokens for all services
     _courseService.setToken(token);
     _lessonService.setToken(token);
-    _reviewService.setToken(token); // Set token for ReviewService
+    _reviewService.setToken(token);
+    _enrollmentService.setToken(token);
 
     _loadCourseDetails();
   }
@@ -77,7 +81,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _lessons = lessons;
         _isLoading = false;
       });
-      _loadReviews(); // Load reviews after course details are loaded
+      _loadReviews();
+      _checkEnrollmentStatus();
     } catch (e) {
       setState(() {
         _hasError = true;
@@ -107,6 +112,102 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     }
   }
 
+  Future<void> _checkEnrollmentStatus() async {
+    try {
+      final enrollments = await _enrollmentService.getEnrolledCourses();
+      final isEnrolled = enrollments.any((e) => e.courseId == widget.courseId);
+      setState(() {
+        _isEnrolled = isEnrolled;
+      });
+    } catch (e) {
+      print('Error checking enrollment status: $e');
+    }
+  }
+
+  Future<void> _enrollInCourse() async {
+    if (_isEnrolled) {
+      // If already enrolled, unenroll
+      await _unenrollFromCourse();
+    } else {
+      // If not enrolled, enroll
+      if (_course!.pricingType == PricingType.FREE) {
+        // Directly enroll for free courses
+        setState(() {
+          _isEnrolling = true;
+        });
+
+        try {
+          await _enrollmentService.enrollStudent(widget.courseId);
+          setState(() {
+            _isEnrolled = true;
+            _isEnrolling = false;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Successfully enrolled in course!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } catch (e) {
+          setState(() {
+            _isEnrolling = false;
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Enrollment failed: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // Redirect to payment page for paid courses
+        _navigateToPaymentPage();
+      }
+    }
+  }
+  Future<void> _unenrollFromCourse() async {
+    setState(() {
+      _isEnrolling = true;
+    });
+
+    try {
+      await _enrollmentService.unenrollStudent(widget.courseId);
+      setState(() {
+        _isEnrolled = false;
+        _isEnrolling = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Successfully unenrolled from course!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isEnrolling = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unenrollment failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  void _navigateToPaymentPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PaymentPage(course: _course!),
+      ),
+    ).then((_) {
+      _checkEnrollmentStatus();
+    });
+  }
   @override
   void dispose() {
     _tabController.dispose();
@@ -145,9 +246,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
 
     if (_course == null) {
       return const Scaffold(
-        body: Center(
-          child: Text('Course not found'),
-        ),
+        body: Center(child: Text('Course not found')),
       );
     }
 
@@ -178,7 +277,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         icon: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Color(0xFFDB2777),
+            color: const Color(0xFFDB2777),
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
@@ -196,7 +295,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Color(0xFFDB2777),
+              color: const Color(0xFFDB2777),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -207,9 +306,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             ),
             child: const Icon(Icons.share, color: Colors.white),
           ),
-          onPressed: () {
-            // Implement share functionality
-          },
+          onPressed: () {},
         ),
         const SizedBox(width: 16),
       ],
@@ -220,12 +317,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             Image.network(
               _courseService.getImageUrl(_course!.imageUrl),
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.image_not_supported),
-                );
-              },
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: Colors.grey[200],
+                child: const Icon(Icons.image_not_supported),
+              ),
             ),
             Container(
               decoration: BoxDecoration(
@@ -254,10 +349,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Rating and Reviews Row
               Row(
                 children: [
-                  // Rating Badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -283,7 +376,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Reviews Text
                   Text(
                     '(${_course!.totalReviews} reviews)',
                     style: TextStyle(
@@ -294,7 +386,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ],
               ),
               const SizedBox(height: 12),
-              // Course Title
               Text(
                 _course!.title,
                 style: const TextStyle(
@@ -304,7 +395,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ),
               ),
               const SizedBox(height: 8),
-              // Instructor Name
               if (_course!.instructorName != null)
                 Text(
                   'By ${_course!.instructorName!}',
@@ -316,7 +406,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             ],
           ),
         ),
-        // Tab Bar
         Container(
           decoration: BoxDecoration(
             border: Border(
@@ -332,15 +421,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             unselectedLabelColor: Colors.grey[600],
             indicatorColor: AppColors.primary,
             indicatorWeight: 3,
-            indicatorSize: TabBarIndicatorSize.tab,
-            labelStyle: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.normal,
-              fontSize: 14,
-            ),
             tabs: const [
               Tab(text: 'About'),
               Tab(text: 'Lessons'),
@@ -354,7 +434,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
 
   Widget _buildTabContent() {
     return SizedBox(
-      height: 600, // Adjust this height as needed
+      height: 600,
       child: TabBarView(
         controller: _tabController,
         children: [
@@ -374,18 +454,12 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         children: [
           const Text(
             'About Course',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
             _course!.description,
-            style: TextStyle(
-              color: Colors.grey[600],
-              height: 1.5,
-            ),
+            style: TextStyle(color: Colors.grey[600], height: 1.5),
           ),
           const SizedBox(height: 24),
           _buildTutorSection(),
@@ -402,10 +476,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       children: [
         const Text(
           'Tutor',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
         Row(
@@ -435,20 +506,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                   ),
                   Text(
                     'Course Instructor',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                    ),
+                    style: TextStyle(color: Colors.grey[600]),
                   ),
                 ],
               ),
-            ),
-            IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-              ),
-              onPressed: () {
-                // Implement call functionality
-              },
             ),
             IconButton(
               icon: Container(
@@ -459,9 +520,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ),
                 child: Icon(Icons.message, color: AppColors.primary, size: 20),
               ),
-              onPressed: () {
-                // Implement message functionality
-              },
+              onPressed: () {},
             ),
           ],
         ),
@@ -475,17 +534,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       children: [
         const Text(
           'Info',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
-        _buildInfoItem(
-          'Students',
-          '${_course!.totalStudents}',
-          Icons.people,
-        ),
+        _buildInfoItem('Students', '${_course!.totalStudents}', Icons.people),
         _buildInfoItem(
           'Language',
           _course!.language.toString().split('.').last,
@@ -496,11 +548,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           _course!.level.toString().split('.').last,
           Icons.bar_chart,
         ),
-        _buildInfoItem(
-          'Access',
-          'Mobile, Desktop',
-          Icons.devices,
-        ),
+        _buildInfoItem('Access', 'Mobile, Desktop', Icons.devices),
       ],
     );
   }
@@ -517,17 +565,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             children: [
               Text(
                 label,
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
         ],
@@ -546,7 +586,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           child: ListTile(
             onTap: lesson.videoUrl != null
                 ? () {
-              // Navigate to VideoPlayerScreen when tapped
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -557,7 +596,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ),
               );
             }
-                : null, // Disable tap if videoUrl is null
+                : null,
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -572,17 +611,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ),
               ),
             ),
-            title: Text(
-              lesson.title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            title: Text(lesson.title, style: const TextStyle(fontWeight: FontWeight.bold)),
             trailing: lesson.videoUrl != null
                 ? IconButton(
               icon: const Icon(Icons.play_circle_outline),
               onPressed: () {
-                // Navigate to VideoPlayerScreen when the play icon is pressed
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -594,7 +627,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 );
               },
             )
-                : null, // Hide the play icon if videoUrl is null
+                : null,
           ),
         );
       },
@@ -603,9 +636,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
 
   Widget _buildReviewsTab() {
     if (_isReviewsLoading) {
-      return Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return Center(child: CircularProgressIndicator(color: AppColors.primary));
     }
 
     if (_reviewsErrorMessage != null) {
@@ -643,16 +674,14 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            leading: CircleAvatar(
-              child: Text(review.username[0]),
-            ),
+            leading: CircleAvatar(child: Text(review.username[0])),
             title: Text(review.username),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.star, color: Colors.amber, size: 16),
+                    const Icon(Icons.star, color: Colors.amber, size: 16),
                     const SizedBox(width: 4),
                     Text('${review.rating}'),
                   ],
@@ -686,12 +715,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Total Price',
-                style: TextStyle(
-                  color: Colors.grey,
-                ),
-              ),
+              const Text('Total Price', style: TextStyle(color: Colors.grey)),
               Text(
                 _course!.pricingType == PricingType.FREE
                     ? 'Free'
@@ -707,19 +731,19 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           const SizedBox(width: 16),
           Expanded(
             child: ElevatedButton(
-              onPressed: () {
-                // Implement enrollment
-              },
+              onPressed: _isEnrolling ? null : _enrollInCourse,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: _isEnrolled ? Colors.red : AppColors.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Text(
-                'Enroll Now',
-                style: TextStyle(
+              child: _isEnrolling
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text(
+                _isEnrolled ? 'Unenroll' : 'Enroll Now',
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
