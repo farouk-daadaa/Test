@@ -30,6 +30,8 @@ public class CourseDTO {
     private LocalDate lastUpdate;
     private Long categoryId;
     private String instructorName;
+    private boolean isBookmarked;
+
 
     public static CourseDTO fromEntity(Course course) {
         CourseDTO dto = new CourseDTO();
