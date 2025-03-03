@@ -215,7 +215,7 @@ class _MyCoursesViewState extends State<MyCoursesView> {
           Navigator.pushNamed(
             context,
             '/course-details',
-            arguments: course,
+            arguments: course.id,
           );
         },
         child: Column(

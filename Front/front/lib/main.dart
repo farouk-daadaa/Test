@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:front/screens/admin/AdminDashboardScreen.dart';
-import 'package:front/screens/homepage/course_details_screen.dart';
-import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
-import 'package:front/screens/instructor/views/edit_course_view.dart';
-import 'package:front/screens/splash_screen.dart';
-import 'package:front/screens/welcome_screen.dart';
 import 'package:provider/provider.dart';
+import 'screens/admin/AdminDashboardScreen.dart';
+import 'screens/homepage/course_details_screen.dart';
+import 'screens/instructor/instructor_dashboard_screen.dart';
+import 'screens/instructor/views/edit_course_view.dart';
+import 'screens/splash_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'auth/ForgotPasswordScreen.dart';
 import 'auth/InstructorSignupScreen.dart';
 import 'auth/ResetPasswordScreen.dart';
@@ -15,7 +15,9 @@ import 'auth/signup_screen.dart';
 import 'services/admin_service.dart';
 import 'services/auth_service.dart';
 import 'screens/homepage/HomeScreen.dart';
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized(); // Add this line
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -33,10 +35,10 @@ class AppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(
-          create: (_) => AuthService()..loadToken(),
+          create: (_) => AuthService(),
         ),
         ChangeNotifierProvider<AdminService>(
-          create: (_) => AdminService(), // Provide AdminService
+          create: (_) => AdminService(),
         ),
       ],
       child: const MyApp(),
@@ -73,44 +75,7 @@ class MyApp extends StatelessWidget {
           bodySmall: TextStyle(fontSize: 12),
         ),
       ),
-      home: Consumer<AuthService>(
-        builder: (context, authService, _) {
-          return FutureBuilder<bool>(
-            future: authService.isLoggedIn(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SplashScreen();
-              }
-
-              if (snapshot.hasData && snapshot.data == true) {
-                return FutureBuilder<String?>(
-                  future: authService.getToken(),
-                  builder: (context, tokenSnapshot) {
-                    if (tokenSnapshot.connectionState == ConnectionState.waiting) {
-                      return const SplashScreen();
-                    }
-
-                    if (tokenSnapshot.hasData) {
-                      final userRole = authService.userRole;
-
-                      if (userRole == 'ADMIN') {
-                        return const AdminDashboardScreen();
-                      } else if (userRole == 'INSTRUCTOR') {
-                        return const InstructorDashboardScreen();
-                      } else {
-                        return const HomeScreen();
-                      }
-                    }
-                    return const WelcomeScreen();
-                  },
-                );
-              }
-
-              return const WelcomeScreen();
-            },
-          );
-        },
-      ),
+      home: const SplashScreen(), // Always start with SplashScreen
       routes: {
         '/welcome': (context) => const WelcomeScreen(),
         '/login': (context) => const LoginScreen(),
@@ -123,7 +88,6 @@ class MyApp extends StatelessWidget {
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/course-details': (context) {
           final args = ModalRoute.of(context)!.settings.arguments;
-
           if (args is int) {
             return CourseDetailsScreen(courseId: args);
           } else if (args is Map<String, dynamic>) {
@@ -132,7 +96,6 @@ class MyApp extends StatelessWidget {
             throw Exception("Invalid arguments for /course-details");
           }
         },
-
         '/edit-course': (context) => const EditCourseView(),
       },
     );
