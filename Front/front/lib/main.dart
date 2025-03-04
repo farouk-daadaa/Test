@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:front/screens/admin/AdminDashboardScreen.dart';
 import 'package:front/screens/homepage/course_details_screen.dart';
 import 'package:front/screens/homepage/views/my_courses_screen.dart';
+import 'package:front/screens/homepage/views/ongoing_courses_screen.dart';
 import 'package:front/screens/homepage/views/popular_courses_screen.dart';
 import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
 import 'package:front/screens/instructor/views/edit_course_view.dart';
@@ -90,6 +91,7 @@ class MyApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/my-courses': (context) => const MyCoursesScreen(),
         '/popular-courses': (context) => const PopularCoursesScreen(),
+        '/ongoing-courses': (context) => const OngoingCoursesScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/course-details': (context) {

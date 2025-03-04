@@ -11,6 +11,7 @@ import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
+import 'views/ongoing_courses_screen.dart'; // Import new screen
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -390,7 +391,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const OngoingCoursesScreen(),
+                    ),
+                  );
+                },
                 child: Text(
                   'See all',
                   style: TextStyle(
@@ -411,6 +419,8 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final data = _enrolledCourses[index];
               final enrollment = data['enrollment'] as EnrollmentDTO;
+              // Filter out completed courses (progressPercentage == 100)
+              if (enrollment.progressPercentage == 100) return const SizedBox.shrink();
               final course = data['course'] as CourseDTO;
               return GestureDetector(
                 onTap: () async {
