@@ -11,6 +11,7 @@ import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -24,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   List<Map<String, dynamic>> _enrolledCourses = [];
+  List<CourseDTO> _popularCourses = [];
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
       await _fetchEnrolledCourses(token);
+      await _fetchPopularCourses(token);
     }
   }
 
@@ -73,6 +76,24 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _fetchPopularCourses(String token) async {
+    courseService.setToken(token);
+    bookmarkService.setToken(token);
+
+    final courses = await courseService.getAllCourses();
+    final bookmarks = await bookmarkService.getBookmarkedCourses();
+
+    final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
+    for (final course in courses) {
+      course.isBookmarked = bookmarkedIds.contains(course.id);
+    }
+
+    courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
+    setState(() {
+      _popularCourses = courses;
+    });
+  }
+
   void updateEnrollment(EnrollmentDTO updatedEnrollment) {
     final index = _enrolledCourses.indexWhere((data) => data['enrollment'].id == updatedEnrollment.id);
     if (index != -1) {
@@ -91,10 +112,37 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void updateBookmarkStatus(int courseId, bool isBookmarked) {
+    setState(() {
+      final index = _popularCourses.indexWhere((course) => course.id == courseId);
+      if (index != -1) {
+        _popularCourses[index].isBookmarked = isBookmarked;
+      }
+    });
+  }
+
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
+    switch (index) {
+      case 1: // My Courses
+        Navigator.pushNamed(
+          context,
+          '/my-courses',
+          arguments: (int newIndex) {
+            setState(() {
+              _selectedIndex = newIndex; // Reset to Home (0) when returning
+            });
+          },
+        ).then((_) {
+          setState(() {
+            _selectedIndex = 0; // Ensure reset to Home on return
+          });
+        });
+        break;
+    // Add other navigation cases if needed (e.g., /bookmarks, /chat, /profile)
+    }
   }
 
   @override
@@ -202,7 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         SizedBox(
           height: 280,
-          child: FutureBuilder<List<CourseDTO>>(
+          child: _popularCourses.isEmpty
+              ? FutureBuilder<List<CourseDTO>>(
             future: _getCoursesWithToken(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
@@ -250,66 +299,71 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
 
-              return ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: snapshot.data!.length,
-                itemBuilder: (context, index) {
-                  final course = snapshot.data![index];
-                  return CourseCard(
-                    course: course,
-                    courseService: courseService,
-                    bookmarkService: bookmarkService,
-                    isBookmarked: course.isBookmarked,
-                    onTap: () async {
-                      await Navigator.pushNamed(
-                        context,
-                        '/course-details',
-                        arguments: {
-                          'courseId': course.id,
-                          'onEnrollmentChanged': () async {
-                            final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                            if (token != null) {
-                              await _fetchEnrolledCourses(token);
-                            }
-                          },
-                          'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
-                            updateEnrollment(updatedEnrollment);
-                          },
-                        },
-                      ).then((result) async {
-                        if (result != null && result is Map) {
-                          final enrollment = result['enrollment'] as EnrollmentDTO?;
-                          final course = result['course'] as CourseDTO?;
-                          if (enrollment != null && course != null) {
-                            addEnrollment(enrollment, course); // Add immediately
-                          }
-                        }
-                        final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                        if (token != null) {
-                          await _fetchEnrolledCourses(token); // Fetch to sync
-                        }
-                      });
-                    },
-                    onBookmarkChanged: (isBookmarked) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            isBookmarked
-                                ? 'Course added to bookmarks'
-                                : 'Course removed from bookmarks',
-                          ),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
+              _popularCourses = snapshot.data!;
+              return _buildCourseList();
             },
-          ),
+          )
+              : _buildCourseList(),
         ),
       ],
+    );
+  }
+
+  Widget _buildCourseList() {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _popularCourses.length,
+      itemBuilder: (context, index) {
+        final course = _popularCourses[index];
+        return CourseCard(
+          course: course,
+          courseService: courseService,
+          bookmarkService: bookmarkService,
+          isBookmarked: course.isBookmarked,
+          onTap: () async {
+            await Navigator.pushNamed(
+              context,
+              '/course-details',
+              arguments: {
+                'courseId': course.id,
+                'onEnrollmentChanged': () async {
+                  final token = await Provider.of<AuthService>(context, listen: false).getToken();
+                  if (token != null) {
+                    await _fetchEnrolledCourses(token);
+                  }
+                },
+                'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
+                  updateEnrollment(updatedEnrollment);
+                },
+              },
+            ).then((result) async {
+              if (result != null && result is Map) {
+                final enrollment = result['enrollment'] as EnrollmentDTO?;
+                final course = result['course'] as CourseDTO?;
+                if (enrollment != null && course != null) {
+                  addEnrollment(enrollment, course);
+                }
+              }
+              final token = await Provider.of<AuthService>(context, listen: false).getToken();
+              if (token != null) {
+                await _fetchEnrolledCourses(token);
+              }
+            });
+          },
+          onBookmarkChanged: (isBookmarked) {
+            updateBookmarkStatus(course.id!, isBookmarked);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  isBookmarked ? 'Course added to bookmarks' : 'Course removed from bookmarks',
+                ),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -374,12 +428,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       final enrollment = result['enrollment'] as EnrollmentDTO?;
                       final course = result['course'] as CourseDTO?;
                       if (enrollment != null && course != null) {
-                        addEnrollment(enrollment, course); // Add immediately
+                        addEnrollment(enrollment, course);
                       }
                     }
                     final token = await Provider.of<AuthService>(context, listen: false).getToken();
                     if (token != null) {
-                      await _fetchEnrolledCourses(token); // Fetch to sync
+                      await _fetchEnrolledCourses(token);
                     }
                   });
                 },

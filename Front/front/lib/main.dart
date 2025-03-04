@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:front/screens/admin/AdminDashboardScreen.dart';
+import 'package:front/screens/homepage/course_details_screen.dart';
+import 'package:front/screens/homepage/views/my_courses_screen.dart';
+import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
+import 'package:front/screens/instructor/views/edit_course_view.dart';
+import 'package:front/screens/instructor/views/instructor_course_details_screen.dart';
+import 'package:front/screens/splash_screen.dart';
+import 'package:front/screens/welcome_screen.dart';
+import 'package:front/auth/ForgotPasswordScreen.dart';
+import 'package:front/auth/InstructorSignupScreen.dart';
+import 'package:front/auth/ResetPasswordScreen.dart';
+import 'package:front/auth/login_screen.dart';
+import 'package:front/auth/signup_screen.dart';
+import 'package:front/services/admin_service.dart';
+import 'package:front/services/auth_service.dart';
+import 'package:front/screens/homepage/HomeScreen.dart';
 import 'package:front/services/course_service.dart';
 import 'package:provider/provider.dart';
-import 'screens/admin/AdminDashboardScreen.dart';
-import 'screens/homepage/course_details_screen.dart';
-import 'screens/instructor/instructor_dashboard_screen.dart';
-import 'screens/instructor/views/edit_course_view.dart';
-import 'screens/instructor/views/instructor_course_details_screen.dart'; // Add this import
-import 'screens/splash_screen.dart';
-import 'screens/welcome_screen.dart';
-import 'auth/ForgotPasswordScreen.dart';
-import 'auth/InstructorSignupScreen.dart';
-import 'auth/ResetPasswordScreen.dart';
-import 'auth/login_screen.dart';
-import 'auth/signup_screen.dart';
-import 'services/admin_service.dart';
-import 'services/auth_service.dart';
-import 'screens/homepage/HomeScreen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -86,6 +87,7 @@ class MyApp extends StatelessWidget {
         '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/reset-password': (context) => const ResetPasswordScreen(),
         '/home': (context) => const HomeScreen(),
+        '/my-courses': (context) => const MyCoursesScreen(), // New route
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/course-details': (context) {
@@ -93,7 +95,11 @@ class MyApp extends StatelessWidget {
           if (args is int) {
             return CourseDetailsScreen(courseId: args);
           } else if (args is Map<String, dynamic>) {
-            return CourseDetailsScreen(courseId: args['courseId']);
+            return CourseDetailsScreen(
+              courseId: args['courseId'],
+              onEnrollmentChanged: args['onEnrollmentChanged'],
+              onLessonCompleted: args['onLessonCompleted'],
+            );
           } else {
             throw Exception("Invalid arguments for /course-details");
           }
