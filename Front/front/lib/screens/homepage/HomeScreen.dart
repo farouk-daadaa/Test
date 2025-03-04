@@ -1,6 +1,5 @@
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
-import 'package:front/screens/homepage/views/popular_courses_screen.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -11,7 +10,8 @@ import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
-import 'views/ongoing_courses_screen.dart'; // Import new screen
+import 'views/ongoing_courses_screen.dart';
+import 'views/popular_courses_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -141,6 +141,9 @@ class _HomeScreenState extends State<HomeScreen> {
             _selectedIndex = 0; // Ensure reset to Home on return
           });
         });
+        break;
+      case 2: // Bookmarks
+        Navigator.pushNamed(context, '/bookmarks');
         break;
     }
   }
@@ -419,7 +422,6 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final data = _enrolledCourses[index];
               final enrollment = data['enrollment'] as EnrollmentDTO;
-              // Filter out completed courses (progressPercentage == 100)
               if (enrollment.progressPercentage == 100) return const SizedBox.shrink();
               final course = data['course'] as CourseDTO;
               return GestureDetector(

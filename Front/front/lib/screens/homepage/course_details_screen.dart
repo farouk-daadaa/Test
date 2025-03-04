@@ -1,5 +1,7 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/course_service.dart';
@@ -7,6 +9,7 @@ import '../../services/lesson_service.dart';
 import '../../services/review_service.dart';
 import '../../services/enrollment_service.dart';
 import '../../services/lesson_progress_service.dart';
+import '../../services/bookmark_service.dart'; // Import BookmarkService
 import '../instructor/views/video_player_screen.dart';
 import 'payment_page.dart';
 import 'package:collection/collection.dart';
@@ -35,6 +38,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late ReviewService _reviewService;
   late EnrollmentService _enrollmentService;
   late LessonProgressService _lessonProgressService;
+  late BookmarkService _bookmarkService; // Add BookmarkService
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
   List<ReviewDTO> _reviews = [];
@@ -72,12 +76,14 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
     _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
     _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080');
+    _bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080'); // Initialize BookmarkService
 
     _courseService.setToken(token);
     _lessonService.setToken(token);
     _reviewService.setToken(token);
     _enrollmentService.setToken(token);
     _lessonProgressService.setToken(token);
+    _bookmarkService.setToken(token); // Set token for bookmark service
 
     _loadCourseDetails();
   }
@@ -87,6 +93,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       final course = await _courseService.getCourseDetails(widget.courseId);
       final lessons = await _lessonService.getLessons(widget.courseId);
       final enrollments = await _enrollmentService.getEnrolledCourses();
+      final bookmarks = await _bookmarkService.getBookmarkedCourses(); // Fetch bookmarks
+      final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
+      course.isBookmarked = bookmarkedIds.contains(course.id); // Set initial bookmark status
+
       setState(() {
         _course = course;
         _lessons = lessons;
@@ -140,7 +150,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             _enrollment = enrollment;
             _isEnrolling = false;
           });
-          // Trigger HomeScreen update without popping
           widget.onEnrollmentChanged?.call();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -165,6 +174,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       }
     }
   }
+
   Future<void> _unenrollFromCourse() async {
     setState(() {
       _isEnrolling = true;
@@ -177,7 +187,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _enrollment = null;
         _isEnrolling = false;
       });
-      widget.onEnrollmentChanged?.call(); // Trigger HomeScreen refresh
+      widget.onEnrollmentChanged?.call();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Successfully unenrolled from course!'),
@@ -205,7 +215,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         builder: (context) => PaymentPage(course: _course!),
       ),
     ).then((_) {
-      _loadCourseDetails(); // Refresh enrollment status after payment
+      _loadCourseDetails();
     });
   }
 
@@ -218,13 +228,58 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       setState(() {
         _enrollment = updatedEnrollment;
       });
-      widget.onLessonCompleted?.call(updatedEnrollment); // Trigger HomeScreen update
+      widget.onLessonCompleted?.call(updatedEnrollment);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Lesson marked as completed')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to mark lesson: $e')),
+      );
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    if (_course == null) return;
+
+    final newState = !_course!.isBookmarked;
+    final courseId = _course!.id!;
+
+    try {
+      if (newState) {
+        await _bookmarkService.addBookmark(courseId);
+      } else {
+        await _bookmarkService.removeBookmark(courseId);
+      }
+
+      setState(() {
+        _course!.isBookmarked = newState;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newState ? 'Course added to bookmarks' : 'Course removed from bookmarks',
+          ),
+          duration: const Duration(seconds: 2),
+          backgroundColor: newState ? Colors.green : Colors.red,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _course!.isBookmarked = !newState; // Revert on failure
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update bookmark: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Retry',
+            textColor: Colors.white,
+            onPressed: () => _toggleBookmark(),
+          ),
+        ),
       );
     }
   }
@@ -328,6 +383,26 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             child: const Icon(Icons.share, color: Colors.white),
           ),
           onPressed: () {},
+        ),
+        IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: _course!.isBookmarked ? AppColors.primary : const Color(0xFFDB2777).withOpacity(0.1),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Icon(
+              _course!.isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+              color: _course!.isBookmarked ? Colors.white : AppColors.primary,
+            ),
+          ),
+          onPressed: _toggleBookmark,
         ),
         const SizedBox(width: 16),
       ],

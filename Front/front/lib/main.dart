@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/screens/admin/AdminDashboardScreen.dart';
 import 'package:front/screens/homepage/course_details_screen.dart';
+import 'package:front/screens/homepage/views/bookmarks_screen.dart';
 import 'package:front/screens/homepage/views/my_courses_screen.dart';
 import 'package:front/screens/homepage/views/ongoing_courses_screen.dart';
 import 'package:front/screens/homepage/views/popular_courses_screen.dart';
@@ -92,6 +93,7 @@ class MyApp extends StatelessWidget {
         '/my-courses': (context) => const MyCoursesScreen(),
         '/popular-courses': (context) => const PopularCoursesScreen(),
         '/ongoing-courses': (context) => const OngoingCoursesScreen(),
+        '/bookmarks': (context) => const BookmarksScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/course-details': (context) {

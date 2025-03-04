@@ -248,14 +248,7 @@ class _OngoingCoursesScreenState extends State<OngoingCoursesScreen> {
       backgroundColor: Colors.white,
       elevation: 0,
       centerTitle: true,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search, color: Colors.black),
-          onPressed: () {
-            // Implement search functionality
-          },
-        ),
-      ],
+
     );
   }
 
