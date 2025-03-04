@@ -13,10 +13,14 @@ import 'package:collection/collection.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   final int courseId;
+  final VoidCallback? onEnrollmentChanged; // Callback for enrollment changes
+  final Function(EnrollmentDTO)? onLessonCompleted; // Callback for lesson completion
 
   const CourseDetailsScreen({
     Key? key,
     required this.courseId,
+    this.onEnrollmentChanged,
+    this.onLessonCompleted,
   }) : super(key: key);
 
   @override
@@ -30,11 +34,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late LessonService _lessonService;
   late ReviewService _reviewService;
   late EnrollmentService _enrollmentService;
-  late LessonProgressService _lessonProgressService; // Add this
+  late LessonProgressService _lessonProgressService;
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
   List<ReviewDTO> _reviews = [];
-  EnrollmentDTO? _enrollment; // Add this
+  EnrollmentDTO? _enrollment;
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
@@ -67,13 +71,13 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     _lessonService = LessonService(baseUrl: 'http://192.168.1.13:8080');
     _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
     _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
-    _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080'); // Initialize
+    _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080');
 
     _courseService.setToken(token);
     _lessonService.setToken(token);
     _reviewService.setToken(token);
     _enrollmentService.setToken(token);
-    _lessonProgressService.setToken(token); // Set token
+    _lessonProgressService.setToken(token);
 
     _loadCourseDetails();
   }
@@ -86,7 +90,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       setState(() {
         _course = course;
         _lessons = lessons;
-        _enrollment = enrollments.firstWhereOrNull((e) => e.courseId == widget.courseId); // Use firstWhereOrNull
+        _enrollment = enrollments.firstWhereOrNull((e) => e.courseId == widget.courseId);
         _isEnrolled = _enrollment != null;
         _isLoading = false;
       });
@@ -133,10 +137,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           final enrollment = await _enrollmentService.enrollStudent(widget.courseId);
           setState(() {
             _isEnrolled = true;
-            _enrollment = enrollment; // Set the new enrollment
+            _enrollment = enrollment;
             _isEnrolling = false;
           });
-
+          // Trigger HomeScreen update without popping
+          widget.onEnrollmentChanged?.call();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Successfully enrolled in course!'),
@@ -160,7 +165,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       }
     }
   }
-
   Future<void> _unenrollFromCourse() async {
     setState(() {
       _isEnrolling = true;
@@ -170,10 +174,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       await _enrollmentService.unenrollStudent(widget.courseId);
       setState(() {
         _isEnrolled = false;
-        _enrollment = null; // Clear enrollment
+        _enrollment = null;
         _isEnrolling = false;
       });
-
+      widget.onEnrollmentChanged?.call(); // Trigger HomeScreen refresh
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Successfully unenrolled from course!'),
@@ -210,9 +214,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     try {
       await _lessonProgressService.markLessonCompleted(_enrollment!.id!, lessonId);
       final progress = await _lessonProgressService.getCourseProgress(_enrollment!.id!);
+      final updatedEnrollment = _enrollment!.copyWith(progressPercentage: progress);
       setState(() {
-        _enrollment = _enrollment!.copyWith(progressPercentage: progress);
+        _enrollment = updatedEnrollment;
       });
+      widget.onLessonCompleted?.call(updatedEnrollment); // Trigger HomeScreen update
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Lesson marked as completed')),
       );
