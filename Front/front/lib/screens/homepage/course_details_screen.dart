@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/course_service.dart';
 import '../../services/lesson_service.dart';
 import '../../services/review_service.dart';
 import '../../services/enrollment_service.dart';
+import '../../services/lesson_progress_service.dart';
 import '../instructor/views/video_player_screen.dart';
-import'payment_page.dart';
+import 'payment_page.dart';
+import 'package:collection/collection.dart';
+
 class CourseDetailsScreen extends StatefulWidget {
   final int courseId;
 
@@ -28,9 +30,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late LessonService _lessonService;
   late ReviewService _reviewService;
   late EnrollmentService _enrollmentService;
+  late LessonProgressService _lessonProgressService; // Add this
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
   List<ReviewDTO> _reviews = [];
+  EnrollmentDTO? _enrollment; // Add this
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
@@ -63,11 +67,13 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     _lessonService = LessonService(baseUrl: 'http://192.168.1.13:8080');
     _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
     _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
+    _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080'); // Initialize
 
     _courseService.setToken(token);
     _lessonService.setToken(token);
     _reviewService.setToken(token);
     _enrollmentService.setToken(token);
+    _lessonProgressService.setToken(token); // Set token
 
     _loadCourseDetails();
   }
@@ -76,13 +82,15 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     try {
       final course = await _courseService.getCourseDetails(widget.courseId);
       final lessons = await _lessonService.getLessons(widget.courseId);
+      final enrollments = await _enrollmentService.getEnrolledCourses();
       setState(() {
         _course = course;
         _lessons = lessons;
+        _enrollment = enrollments.firstWhereOrNull((e) => e.courseId == widget.courseId); // Use firstWhereOrNull
+        _isEnrolled = _enrollment != null;
         _isLoading = false;
       });
       _loadReviews();
-      _checkEnrollmentStatus();
     } catch (e) {
       setState(() {
         _hasError = true;
@@ -112,34 +120,20 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     }
   }
 
-  Future<void> _checkEnrollmentStatus() async {
-    try {
-      final enrollments = await _enrollmentService.getEnrolledCourses();
-      final isEnrolled = enrollments.any((e) => e.courseId == widget.courseId);
-      setState(() {
-        _isEnrolled = isEnrolled;
-      });
-    } catch (e) {
-      print('Error checking enrollment status: $e');
-    }
-  }
-
   Future<void> _enrollInCourse() async {
     if (_isEnrolled) {
-      // If already enrolled, unenroll
       await _unenrollFromCourse();
     } else {
-      // If not enrolled, enroll
       if (_course!.pricingType == PricingType.FREE) {
-        // Directly enroll for free courses
         setState(() {
           _isEnrolling = true;
         });
 
         try {
-          await _enrollmentService.enrollStudent(widget.courseId);
+          final enrollment = await _enrollmentService.enrollStudent(widget.courseId);
           setState(() {
             _isEnrolled = true;
+            _enrollment = enrollment; // Set the new enrollment
             _isEnrolling = false;
           });
 
@@ -162,11 +156,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           );
         }
       } else {
-        // Redirect to payment page for paid courses
         _navigateToPaymentPage();
       }
     }
   }
+
   Future<void> _unenrollFromCourse() async {
     setState(() {
       _isEnrolling = true;
@@ -176,6 +170,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       await _enrollmentService.unenrollStudent(widget.courseId);
       setState(() {
         _isEnrolled = false;
+        _enrollment = null; // Clear enrollment
         _isEnrolling = false;
       });
 
@@ -198,6 +193,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       );
     }
   }
+
   void _navigateToPaymentPage() {
     Navigator.push(
       context,
@@ -205,9 +201,28 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         builder: (context) => PaymentPage(course: _course!),
       ),
     ).then((_) {
-      _checkEnrollmentStatus();
+      _loadCourseDetails(); // Refresh enrollment status after payment
     });
   }
+
+  Future<void> _markLessonCompleted(int lessonId) async {
+    if (_enrollment == null) return;
+    try {
+      await _lessonProgressService.markLessonCompleted(_enrollment!.id!, lessonId);
+      final progress = await _lessonProgressService.getCourseProgress(_enrollment!.id!);
+      setState(() {
+        _enrollment = _enrollment!.copyWith(progressPercentage: progress);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lesson marked as completed')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to mark lesson: $e')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -585,8 +600,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             onTap: lesson.videoUrl != null
-                ? () {
-              Navigator.push(
+                ? () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => VideoPlayerScreen(
@@ -595,6 +610,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                   ),
                 ),
               );
+              if (_isEnrolled && lesson.id != null) {
+                _markLessonCompleted(lesson.id!);
+              }
             }
                 : null,
             leading: Container(
@@ -615,8 +633,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
             trailing: lesson.videoUrl != null
                 ? IconButton(
               icon: const Icon(Icons.play_circle_outline),
-              onPressed: () {
-                Navigator.push(
+              onPressed: () async {
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => VideoPlayerScreen(
@@ -625,6 +643,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                     ),
                   ),
                 );
+                if (_isEnrolled && lesson.id != null) {
+                  _markLessonCompleted(lesson.id!);
+                }
               },
             )
                 : null,
@@ -726,6 +747,16 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                   color: AppColors.primary,
                 ),
               ),
+              if (_isEnrolled && _enrollment != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Progress: ${_enrollment!.progressPercentage}%',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textGray,
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(width: 16),
@@ -753,6 +784,22 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+// Add this extension to EnrollmentDTO if not already present
+extension EnrollmentDTOCopy on EnrollmentDTO {
+  EnrollmentDTO copyWith({int? progressPercentage}) {
+    return EnrollmentDTO(
+      id: this.id,
+      courseId: this.courseId,
+      courseTitle: this.courseTitle,
+      courseDescription: this.courseDescription,
+      status: this.status,
+      progressPercentage: progressPercentage ?? this.progressPercentage,
+      enrollmentDate: this.enrollmentDate,
+      lastAccessedDate: this.lastAccessedDate,
     );
   }
 }

@@ -1,9 +1,11 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
+import '../../services/enrollment_service.dart'; // Add this import
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
@@ -20,6 +22,23 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
+  final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeServices();
+  }
+
+  Future<void> _initializeServices() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final token = await authService.getToken();
+    if (token != null) {
+      courseService.setToken(token);
+      bookmarkService.setToken(token);
+      enrollmentService.setToken(token);
+    }
+  }
 
   void _onItemTapped(int index) {
     setState(() {
@@ -206,34 +225,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<List<CourseDTO>> _getCoursesWithToken() async {
-    final authService = Provider.of<AuthService>(context, listen: false);
-    final token = await authService.getToken();
-
-    if (token == null) {
-      throw Exception('User not authenticated');
-    }
-
-    courseService.setToken(token);
-    bookmarkService.setToken(token);
-
-    // Fetch courses and bookmarks
-    final courses = await courseService.getAllCourses();
-    final bookmarks = await bookmarkService.getBookmarkedCourses();
-
-    // Create a set of bookmarked course IDs
-    final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
-
-    // Update bookmark status for each course
-    for (final course in courses) {
-      course.isBookmarked = bookmarkedIds.contains(course.id);
-    }
-
-    // Sort courses by rating
-    courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
-    return courses;
-  }
-
   Widget _buildContinueLearning() {
     return Column(
       children: [
@@ -261,69 +252,135 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.backgroundGray),
-          ),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  'https://picsum.photos/80/80',
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'UI/UX Design Principles',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+        SizedBox(
+          height: 120,
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: _getEnrolledCoursesWithToken(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+              }
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 32, color: AppColors.textGray),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Error: ${snapshot.error}',
+                        style: TextStyle(color: AppColors.textGray),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: 0.6,
-                      backgroundColor: AppColors.backgroundGray,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
+                    ],
+                  ),
+                );
+              }
+              final enrollmentData = snapshot.data ?? [];
+              if (enrollmentData.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.school_outlined, size: 32, color: AppColors.textGray),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No enrolled courses yet',
+                        style: TextStyle(color: AppColors.textGray),
                       ),
+                    ],
+                  ),
+                );
+              }
+              return ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: enrollmentData.length,
+                itemBuilder: (context, index) {
+                  final data = enrollmentData[index];
+                  final enrollment = data['enrollment'] as EnrollmentDTO;
+                  final course = data['course'] as CourseDTO;
+                  return Container(
+                    width: 300,
+                    margin: const EdgeInsets.only(right: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.backgroundGray),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Row(
                       children: [
-                        Text(
-                          '60% Complete',
-                          style: TextStyle(
-                            color: AppColors.textGray,
-                            fontSize: 12,
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            courseService.getImageUrl(course.imageUrl), // Use course.imageUrl
+                            width: 80,
+                            height: 80,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              width: 80,
+                              height: 80,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.image_not_supported),
+                            ),
                           ),
                         ),
-                        ElevatedButton(
-                          onPressed: () {},
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                enrollment.courseTitle,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              LinearProgressIndicator(
+                                value: enrollment.progressPercentage / 100,
+                                backgroundColor: AppColors.backgroundGray,
+                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${enrollment.progressPercentage}% Complete',
+                                    style: TextStyle(
+                                      color: AppColors.textGray,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pushNamed(
+                                        context,
+                                        '/course-details',
+                                        arguments: enrollment.courseId,
+                                      );
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    ),
+                                    child: const Text('Resume'),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          child: const Text('Resume'),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  );
+                },
+              );
+            },
           ),
         ),
       ],
@@ -490,5 +547,62 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  Future<List<CourseDTO>> _getCoursesWithToken() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final token = await authService.getToken();
+
+    if (token == null) {
+      throw Exception('User not authenticated');
+    }
+
+    courseService.setToken(token);
+    bookmarkService.setToken(token);
+
+    final courses = await courseService.getAllCourses();
+    final bookmarks = await bookmarkService.getBookmarkedCourses();
+
+    final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
+    for (final course in courses) {
+      course.isBookmarked = bookmarkedIds.contains(course.id);
+    }
+
+    courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
+    return courses;
+  }
+
+  Future<List<Map<String, dynamic>>> _getEnrolledCoursesWithToken() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final token = await authService.getToken();
+    if (token == null) throw Exception('User not authenticated');
+
+    enrollmentService.setToken(token);
+    courseService.setToken(token); // Ensure token is set for courseService
+
+    final enrollments = await enrollmentService.getEnrolledCourses();
+    final courses = await courseService.getAllCourses();
+
+    // Map enrollments to their corresponding courses
+    return enrollments.map((enrollment) {
+      final course = courses.firstWhere(
+            (c) => c.id == enrollment.courseId,
+        orElse: () => CourseDTO(
+          id: enrollment.courseId,
+          title: enrollment.courseTitle,
+          description: enrollment.courseDescription,
+          price: Decimal.zero,
+          pricingType: PricingType.FREE,
+          imageUrl: '', // Default empty image URL
+          level: CourseLevel.BEGINNER,
+          language: CourseLanguage.ENGLISH,
+          categoryId: 0,
+        ),
+      );
+      return {
+        'enrollment': enrollment,
+        'course': course,
+      };
+    }).toList();
   }
 }
