@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../constants/colors.dart';
-import '../../services/admin_service.dart';
+import '../../../constants/colors.dart';
+import '../../../services/admin_service.dart';
 
 class AllCategoriesScreen extends StatelessWidget {
   final List<Map<String, dynamic>> categories;

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/admin_service.dart';
-import 'all_categories_screen.dart';
+import 'views/all_categories_screen.dart';
 
 class CategoriesSection extends StatelessWidget {
   const CategoriesSection({super.key});

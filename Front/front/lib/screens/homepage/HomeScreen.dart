@@ -1,5 +1,6 @@
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
+import 'package:front/screens/homepage/views/popular_courses_screen.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -10,7 +11,6 @@ import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -141,7 +141,6 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-    // Add other navigation cases if needed (e.g., /bookmarks, /chat, /profile)
     }
   }
 
@@ -236,7 +235,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PopularCoursesScreen(),
+                    ),
+                  );
+                },
                 child: Text(
                   'See all',
                   style: TextStyle(
