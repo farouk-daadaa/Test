@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:front/services/course_service.dart';
 import 'package:provider/provider.dart';
 import 'screens/admin/AdminDashboardScreen.dart';
 import 'screens/homepage/course_details_screen.dart';
 import 'screens/instructor/instructor_dashboard_screen.dart';
 import 'screens/instructor/views/edit_course_view.dart';
+import 'screens/instructor/views/instructor_course_details_screen.dart'; // Add this import
 import 'screens/splash_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'auth/ForgotPasswordScreen.dart';
@@ -17,7 +19,7 @@ import 'services/auth_service.dart';
 import 'screens/homepage/HomeScreen.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized(); // Add this line
+  WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -75,7 +77,7 @@ class MyApp extends StatelessWidget {
           bodySmall: TextStyle(fontSize: 12),
         ),
       ),
-      home: const SplashScreen(), // Always start with SplashScreen
+      home: const SplashScreen(),
       routes: {
         '/welcome': (context) => const WelcomeScreen(),
         '/login': (context) => const LoginScreen(),
@@ -94,6 +96,14 @@ class MyApp extends StatelessWidget {
             return CourseDetailsScreen(courseId: args['courseId']);
           } else {
             throw Exception("Invalid arguments for /course-details");
+          }
+        },
+        '/instructor-course-details': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments;
+          if (args is CourseDTO) {
+            return InstructorCourseDetailsScreen();
+          } else {
+            throw Exception("Invalid arguments for /instructor-course-details; expected CourseDTO");
           }
         },
         '/edit-course': (context) => const EditCourseView(),

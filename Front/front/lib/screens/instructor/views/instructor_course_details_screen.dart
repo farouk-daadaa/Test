@@ -2,24 +2,98 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:front/services/course_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import'/screens/instructor/views/lessons_tab_view.dart';
+import '../../../services/auth_service.dart';
+import '/screens/instructor/views/lessons_tab_view.dart';
+import 'package:front/services/review_service.dart';
+import 'package:provider/provider.dart'; // For AuthService
 
-class CourseDetailsScreen extends StatefulWidget {
-  const CourseDetailsScreen({Key? key}) : super(key: key);
+class InstructorCourseDetailsScreen extends StatefulWidget {
+  const InstructorCourseDetailsScreen({Key? key}) : super(key: key);
 
   @override
-  State<CourseDetailsScreen> createState() => _CourseDetailsScreenState();
+  State<InstructorCourseDetailsScreen> createState() => _InstructorCourseDetailsScreenState();
 }
 
-class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTickerProviderStateMixin {
+class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
   int _lessonsCount = 0;
+  late CourseService _courseService;
+  late ReviewService _reviewService;
+  CourseDTO? _course;
+  List<ReviewDTO> _reviews = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  String? _errorMessage;
+  bool _isReviewsLoading = false;
+  String? _reviewsErrorMessage;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _initializeServices();
+  }
+
+  Future<void> _initializeServices() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final token = await authService.getToken();
+
+    if (token == null) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = 'Please log in to view course details';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    _courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
+    _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
+
+    _courseService.setToken(token);
+    _reviewService.setToken(token);
+
+    _loadCourseDetails();
+  }
+
+  Future<void> _loadCourseDetails() async {
+    try {
+      final course = ModalRoute.of(context)!.settings.arguments as CourseDTO;
+      if (course.id == null) {
+        throw Exception("Invalid course ID");
+      }
+      setState(() {
+        _course = course;
+        _isLoading = false;
+      });
+      _loadReviews();
+    } catch (e) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadReviews() async {
+    setState(() {
+      _isReviewsLoading = true;
+      _reviewsErrorMessage = null;
+    });
+
+    try {
+      final reviews = await _reviewService.getReviewsByCourse(_course!.id!);
+      setState(() {
+        _reviews = reviews;
+        _isReviewsLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _reviewsErrorMessage = e.toString();
+        _isReviewsLoading = false;
+      });
+    }
   }
 
   @override
@@ -30,11 +104,33 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
 
   @override
   Widget build(BuildContext context) {
-    final CourseDTO course = ModalRoute.of(context)!.settings.arguments as CourseDTO;
-    if (course.id == null) {
-      return const Center(child: Text("Invalid course"));
+    if (_isLoading) {
+      return Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFFDB2777)),
+        ),
+      );
     }
-    final courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
+
+    if (_hasError) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 16),
+              Text(_errorMessage ?? 'An error occurred'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadCourseDetails,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -53,9 +149,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                   Stack(
                     children: [
                       Hero(
-                        tag: 'course-${course.id}',
+                        tag: 'course-${_course!.id}',
                         child: CachedNetworkImage(
-                          imageUrl: courseService.getImageUrl(course.imageUrl),
+                          imageUrl: _courseService.getImageUrl(_course!.imageUrl),
                           height: 240,
                           width: double.infinity,
                           fit: BoxFit.cover,
@@ -73,7 +169,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                           ),
                         ),
                       ),
-
                     ],
                   ),
 
@@ -86,7 +181,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                         // Title and Badge
                         Row(
                           children: [
-                            if (course.rating != null && course.rating! >= 4.5)
+                            if (_course!.rating != null && _course!.rating! >= 4.5)
                               Container(
                                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
@@ -109,7 +204,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
 
                         // Course Title
                         Text(
-                          course.title,
+                          _course!.title,
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -122,7 +217,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                             CircleAvatar(
                               backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
                               child: Text(
-                                course.instructorName?[0] ?? 'I',
+                                _course!.instructorName?[0] ?? 'I',
                                 style: TextStyle(
                                   color: Color(0xFFDB2777),
                                   fontWeight: FontWeight.bold,
@@ -131,7 +226,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                             ),
                             SizedBox(width: 8),
                             Text(
-                              course.instructorName ?? 'Instructor',
+                              _course!.instructorName ?? 'Instructor',
                               style: TextStyle(
                                 color: Colors.grey[700],
                                 fontWeight: FontWeight.w500,
@@ -144,20 +239,19 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                               '$_lessonsCount Lessons',
                               style: TextStyle(color: Colors.grey[700]),
                             ),
-
                           ],
                         ),
                         SizedBox(height: 16),
 
                         // Rating Section
-                        if (course.rating != null)
+                        if (_course!.rating != null)
                           Row(
                             children: [
                               ...List.generate(5, (index) {
                                 return Icon(
-                                  index < course.rating!.floor()
+                                  index < _course!.rating!.floor()
                                       ? Icons.star
-                                      : index < course.rating!
+                                      : index < _course!.rating!
                                       ? Icons.star_half
                                       : Icons.star_border,
                                   color: Colors.amber,
@@ -166,7 +260,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                               }),
                               SizedBox(width: 8),
                               Text(
-                                course.rating!.toStringAsFixed(1),
+                                _course!.rating!.toStringAsFixed(1),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -174,7 +268,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                               ),
                               SizedBox(width: 4),
                               Text(
-                                '(${course.totalReviews} reviews)',
+                                '(${_course!.totalReviews} reviews)',
                                 style: TextStyle(
                                   color: Colors.grey[600],
                                   fontSize: 14,
@@ -214,41 +308,38 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
                               _buildSectionTitle('Course Description'),
                               SizedBox(height: 8),
                               Text(
-                                course.description,
+                                _course!.description,
                                 style: TextStyle(
                                   height: 1.6,
                                   color: Colors.grey[800],
                                 ),
                               ),
                               SizedBox(height: 24),
-
                               _buildSectionTitle('Course Details'),
                               SizedBox(height: 16),
-                              _buildDetailRow('Level', course.level.toString().split('.').last),
-                              _buildDetailRow('Language', course.language.toString().split('.').last),
-                              _buildDetailRow('Price', course.pricingType == PricingType.FREE
+                              _buildDetailRow('Level', _course!.level.toString().split('.').last),
+                              _buildDetailRow('Language', _course!.language.toString().split('.').last),
+                              _buildDetailRow('Price', _course!.pricingType == PricingType.FREE
                                   ? 'Free'
-                                  : '\$${course.price}'),
-                              _buildDetailRow('Total Students', course.totalStudents.toString()),
-                              _buildDetailRow('Last Updated', course.lastUpdate?.toString() ?? 'Recently'),
-
-
+                                  : '\$${_course!.price}'),
+                              _buildDetailRow('Total Students', _course!.totalStudents.toString()),
+                              _buildDetailRow('Last Updated', _course!.lastUpdate?.toString() ?? 'Recently'),
                             ],
                           ),
                         ),
 
+                        // Lessons Tab
                         LessonsTabView(
-                          courseId: course.id!,
+                          courseId: _course!.id!,
                           onLessonsCountChanged: (count) {
                             setState(() {
-                              // Update the lessons count in the UI
                               _lessonsCount = count;
                             });
                           },
                         ),
 
-                        // Reviews Tab (Placeholder)
-                        Center(child: Text('Reviews coming soon')),
+                        // Reviews Tab
+                        _buildReviewsTab(),
                       ],
                     ),
                   ),
@@ -319,6 +410,85 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> with SingleTi
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildReviewsTab() {
+    if (_isReviewsLoading) {
+      return Center(child: CircularProgressIndicator(color: Color(0xFFDB2777)));
+    }
+
+    if (_reviewsErrorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48),
+            const SizedBox(height: 16),
+            Text(_reviewsErrorMessage!),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadReviews,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_reviews.isEmpty) {
+      return Center(
+        child: Text(
+          'No reviews yet',
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _reviews.length,
+      itemBuilder: (context, index) {
+        final review = _reviews[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
+              child: Text(
+                review.username[0].toUpperCase(),
+                style: TextStyle(color: Color(0xFFDB2777)),
+              ),
+            ),
+            title: Text(review.username),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: List.generate(5, (index) {
+                    return Icon(
+                      index < review.rating.floor()
+                          ? Icons.star
+                          : index < review.rating
+                          ? Icons.star_half
+                          : Icons.star_border,
+                      color: Colors.amber,
+                      size: 16,
+                    );
+                  }),
+                ),
+                const SizedBox(height: 4),
+                Text(review.comment),
+                const SizedBox(height: 4),
+                Text(
+                  review.createdAt.toString().split(' ')[0],
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

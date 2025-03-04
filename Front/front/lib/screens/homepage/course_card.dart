@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../constants/colors.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
-import '../instructor/views/course_details_screen.dart';
+import '../instructor/views/instructor_course_details_screen.dart';
 
 class CourseCard extends StatefulWidget {
   final CourseDTO course;
@@ -82,6 +82,7 @@ class _CourseCardState extends State<CourseCard> {
           context,
           '/course-details',
           arguments: {'courseId': widget.course.id},
+
         );
       },
       child: Container(

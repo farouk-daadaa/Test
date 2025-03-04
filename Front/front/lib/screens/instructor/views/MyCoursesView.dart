@@ -214,8 +214,8 @@ class _MyCoursesViewState extends State<MyCoursesView> {
         onTap: () {
           Navigator.pushNamed(
             context,
-            '/course-details',
-            arguments: course.id,
+            '/instructor-course-details',
+            arguments: course,
           );
         },
         child: Column(
