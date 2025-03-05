@@ -231,6 +231,16 @@ public class AuthController {
             return ResponseEntity.notFound().build();
         }
     }
-
+    @GetMapping("/user/id/{username}")
+    public ResponseEntity<Map<String, Integer>> getUserIdByUsername(@PathVariable String username) {
+        Optional<UserEntity> userOptional = userRepository.findByUsername(username);
+        if (userOptional.isPresent()) {
+            Map<String, Integer> response = new HashMap<>();
+            response.put("id", userOptional.get().getId().intValue());
+            return ResponseEntity.ok(response);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
 
 }

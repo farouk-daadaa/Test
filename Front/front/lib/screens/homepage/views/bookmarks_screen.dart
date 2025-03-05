@@ -2,10 +2,12 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
+import 'dart:typed_data'; // Import for Uint8List
 import '../../../constants/colors.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/bookmark_service.dart';
 import '../../../services/course_service.dart';
+import '../../../services/image_service.dart'; // Import ImageService
 import '../bottom_nav_bar.dart';
 
 class BookmarksScreen extends StatefulWidget {
@@ -18,12 +20,15 @@ class BookmarksScreen extends StatefulWidget {
 class _BookmarksScreenState extends State<BookmarksScreen> {
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
+  final ImageService imageService = ImageService(); // Initialize ImageService
+  late AuthService _authService; // Declare _authService as late
   List<CourseDTO> _bookmarkedCourses = [];
   bool _isLoading = true;
   bool _isRefreshing = false;
   String? _errorMessage;
   String _searchQuery = '';
   List<CourseDTO> _filteredCourses = [];
+  Map<String, Uint8List?> _instructorImages = {}; // Map to store instructor images by name
 
   @override
   void initState() {
@@ -37,7 +42,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     if (token != null) {
       courseService.setToken(token);
       bookmarkService.setToken(token);
+      imageService.setToken(token); // Set token for ImageService
+      _authService = authService; // Initialize _authService
       await _fetchBookmarkedCourses(token);
+      await _fetchInstructorImages(token); // Fetch images after courses are loaded
     } else {
       setState(() {
         _isLoading = false;
@@ -70,6 +78,28 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     }
   }
 
+  Future<void> _fetchInstructorImages(String token) async {
+    for (var course in _bookmarkedCourses) {
+      if (course.instructorName != null && !_instructorImages.containsKey(course.instructorName!)) {
+        final instructorId = await _authService.getUserIdByUsername(course.instructorName!); // Use class-level _authService
+        if (instructorId != null) {
+          print('Fetching image for ${course.instructorName} with ID: $instructorId'); // Debug log
+          final imageBytes = await imageService.getUserImage(context, instructorId);
+          if (imageBytes != null) {
+            print('Image fetched for ${course.instructorName}: ${imageBytes.length} bytes'); // Debug log
+            setState(() {
+              _instructorImages[course.instructorName!] = imageBytes;
+            });
+          } else {
+            print('No image bytes returned for ${course.instructorName}');
+          }
+        } else {
+          print('No ID found for instructor: ${course.instructorName}');
+        }
+      }
+    }
+  }
+
   Future<void> _refreshCourses() async {
     setState(() {
       _isRefreshing = true;
@@ -79,6 +109,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     final token = await authService.getToken();
     if (token != null) {
       await _fetchBookmarkedCourses(token);
+      await _fetchInstructorImages(token); // Refresh images too
     } else {
       setState(() {
         _isRefreshing = false;
@@ -772,15 +803,22 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                           children: [
                             CircleAvatar(
                               radius: 10,
-                              backgroundColor: AppColors.primary.withOpacity(0.1),
-                              child: Text(
+                              backgroundImage: _instructorImages[course.instructorName] != null
+                                  ? MemoryImage(_instructorImages[course.instructorName]!)
+                                  : null,
+                              backgroundColor: _instructorImages[course.instructorName] == null
+                                  ? AppColors.primary.withOpacity(0.1)
+                                  : null,
+                              child: _instructorImages[course.instructorName] == null
+                                  ? Text(
                                 course.instructorName?[0] ?? 'I',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.primary,
                                 ),
-                              ),
+                              )
+                                  : null,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
@@ -871,4 +909,3 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     );
   }
 }
-

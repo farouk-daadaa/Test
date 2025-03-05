@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
+import '../../services/image_service.dart'; // Import ImageService
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
@@ -26,10 +29,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
+  final ImageService imageService = ImageService(); // Initialize ImageService
+  late AuthService _authService; // Declare _authService as late
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
   List<CourseDTO> _featuredCourses = []; // For featured courses (kept for potential reuse)
-  Map<String, InstructorProfile> _topInstructors = {}; // Store top instructors
+  List<String> _topInstructors = []; // Store top instructor names
+  Map<String, Uint8List?> _instructorImages = {}; // Map to store instructor images by name
 
   @override
   void initState() {
@@ -44,10 +50,12 @@ class _HomeScreenState extends State<HomeScreen> {
       courseService.setToken(token);
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
+      imageService.setToken(token); // Set token for ImageService
+      _authService = authService; // Initialize _authService
       await _fetchEnrolledCourses(token);
       await _fetchPopularCourses(token);
       await _fetchFeaturedCourses(token); // Kept for potential reuse
-      await _fetchTopInstructors(token); // Fetch top instructors
+      await _fetchTopInstructors(token, context); // Pass token and context
     }
   }
 
@@ -108,9 +116,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _fetchTopInstructors(String token) async {
+  Future<void> _fetchTopInstructors(String token, BuildContext context) async {
     final allCourses = await courseService.getAllCourses();
-    // Aggregate instructors based on average rating (mock logic)
+    // Aggregate instructors based on average rating
     final instructorRatings = <String, List<double>>{};
     for (var course in allCourses) {
       if (course.instructorName != null && course.rating != null) {
@@ -118,34 +126,42 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    final topInstructors = instructorRatings.map((instructorName, ratings) {
-      final avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
-      return MapEntry(
-        instructorName,
-        InstructorProfile(
-          name: instructorName,
-          averageRating: avgRating,
-          courseCount: ratings.length,
-        ),
-      );
+    // Sort by average rating and take top 5
+    final topInstructors = instructorRatings.entries
+        .map((entry) => MapEntry(entry.key, entry.value.reduce((a, b) => a + b) / entry.value.length))
+        .where((entry) => entry.value > 0)
+        .sorted((a, b) => b.value.compareTo(a.value))
+        .take(5)
+        .map((entry) => entry.key)
+        .toList();
+
+    setState(() {
+      _topInstructors = topInstructors;
     });
 
-    // Sort by average rating and take top 5
-    setState(() {
-      _topInstructors = Map.fromIterables(
-        topInstructors.values
-            .toList()
-            .where((profile) => profile.averageRating > 0)
-            .sorted((a, b) => b.averageRating.compareTo(a.averageRating))
-            .take(5)
-            .map((profile) => profile.name), // Use instructor names as keys
-        topInstructors.values
-            .toList()
-            .where((profile) => profile.averageRating > 0)
-            .sorted((a, b) => b.averageRating.compareTo(a.averageRating))
-            .take(5), // Use the filtered and sorted profiles as values
-      );
-    });
+    // Fetch images for top instructors
+    for (var instructorName in _topInstructors) {
+      await _fetchInstructorImage(instructorName, context, token);
+    }
+  }
+
+  Future<void> _fetchInstructorImage(String instructorName, BuildContext context, String token) async {
+    if (_instructorImages.containsKey(instructorName)) return; // Avoid redundant calls
+    final instructorId = await _authService.getUserIdByUsername(instructorName);
+    if (instructorId != null) {
+      print('Fetching image for $instructorName with ID: $instructorId'); // Debug log
+      final imageBytes = await imageService.getUserImage(context, instructorId);
+      if (imageBytes != null) {
+        print('Image fetched for $instructorName: ${imageBytes.length} bytes'); // Debug log
+        setState(() {
+          _instructorImages[instructorName] = imageBytes;
+        });
+      } else {
+        print('No image bytes returned for $instructorName');
+      }
+    } else {
+      print('No ID found for instructor: $instructorName');
+    }
   }
 
   void updateEnrollment(EnrollmentDTO updatedEnrollment) {
@@ -213,12 +229,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSearchBar(),
               const CategoriesSection(),
               _buildPopularCourses(),
+              _buildTopInstructors(), // Moved to appear before Continue Learning
               // Conditionally render Continue Learning only if there are ongoing courses
               if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
                 _buildContinueLearning(),
-              // Removed _buildQuickStartGuide()
-              // Removed _buildFeaturedCourses()
-              _buildTopInstructors(),
               const SizedBox(height: 80),
             ],
           ),
@@ -601,85 +615,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Removed _buildQuickStartGuide() method
-  // Removed _buildFeaturedCourses() method
-  Widget _buildTopInstructors() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Top Instructors',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PopularCoursesScreen(), // Placeholder; replace with TopInstructorsScreen
-                    ),
-                  );
-                },
-                child: Text(
-                  'See all',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 120, // Fixed height, but content will be constrained
-          child: _topInstructors.isEmpty
-              ? const Center(child: Text('No top instructors available'))
-              : ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _topInstructors.length,
-            itemBuilder: (context, index) {
-              final profile = _topInstructors.values.elementAt(index);
-              return Padding(
-                  padding: const EdgeInsets.only(right: 16),
-              child: GestureDetector(
-              child: Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Container(
-              width: 100,
-              padding: const EdgeInsets.all(8),
-              child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-              CircleAvatar(
-              radius: 30,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              ),
-
-              ],
-              ),
-              ),
-              ),
-              )
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<List<CourseDTO>> _getCoursesWithToken() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
@@ -702,17 +637,98 @@ class _HomeScreenState extends State<HomeScreen> {
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
     return courses;
   }
-}
 
-// Simple model for instructor profile
-class InstructorProfile {
-  final String name;
-  final double averageRating;
-  final int courseCount;
-
-  InstructorProfile({
-    required this.name,
-    required this.averageRating,
-    required this.courseCount,
-  });
+  Widget _buildTopInstructors() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start, // Align content to the start
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Top Instructors',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PopularCoursesScreen(), // Placeholder
+                    ),
+                  );
+                },
+                child: Text(
+                  'See all',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 120, // Reduced height to minimize space
+          child: _topInstructors.isEmpty
+              ? const Center(child: Text('No top instructors available'))
+              : ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _topInstructors.length,
+            itemBuilder: (context, index) {
+              final instructorName = _topInstructors[index]; // Access directly from list
+              return Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, // Minimize vertical space
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundImage: _instructorImages[instructorName] != null
+                          ? MemoryImage(_instructorImages[instructorName]!)
+                          : null,
+                      backgroundColor: _instructorImages[instructorName] == null
+                          ? AppColors.primary.withOpacity(0.1)
+                          : null,
+                      child: _instructorImages[instructorName] == null
+                          ? Text(
+                        instructorName[0],
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      )
+                          : null,
+                    ),
+                    const SizedBox(height: 8), // Reduced space between avatar and name
+                    Text(
+                      instructorName,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[900],
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 0.10), // Reduced space below the section
+      ],
+    );
+  }
 }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,15 +11,16 @@ import '../../services/lesson_service.dart';
 import '../../services/review_service.dart';
 import '../../services/enrollment_service.dart';
 import '../../services/lesson_progress_service.dart';
-import '../../services/bookmark_service.dart'; // Import BookmarkService
+import '../../services/bookmark_service.dart';
+import '../../services/image_service.dart'; // Import ImageService
 import '../instructor/views/video_player_screen.dart';
 import 'payment_page.dart';
 import 'package:collection/collection.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   final int courseId;
-  final VoidCallback? onEnrollmentChanged; // Callback for enrollment changes
-  final Function(EnrollmentDTO)? onLessonCompleted; // Callback for lesson completion
+  final VoidCallback? onEnrollmentChanged;
+  final Function(EnrollmentDTO)? onLessonCompleted;
 
   const CourseDetailsScreen({
     Key? key,
@@ -38,7 +41,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late ReviewService _reviewService;
   late EnrollmentService _enrollmentService;
   late LessonProgressService _lessonProgressService;
-  late BookmarkService _bookmarkService; // Add BookmarkService
+  late BookmarkService _bookmarkService;
+  late ImageService _imageService; // Add ImageService
+  late AuthService _authService; // Add AuthService
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
   List<ReviewDTO> _reviews = [];
@@ -50,6 +55,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   String? _reviewsErrorMessage;
   bool _isEnrolling = false;
   bool _isEnrolled = false;
+  Uint8List? _instructorImage; // Store instructor image
+  Map<String, Uint8List?> _studentImages = {}; // Map to store student images by username
 
   @override
   void initState() {
@@ -76,14 +83,16 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
     _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
     _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080');
-    _bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080'); // Initialize BookmarkService
-
+    _bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
+    _imageService = ImageService(); // Initialize ImageService
+    _authService = authService; // Store AuthService
     _courseService.setToken(token);
     _lessonService.setToken(token);
     _reviewService.setToken(token);
     _enrollmentService.setToken(token);
     _lessonProgressService.setToken(token);
-    _bookmarkService.setToken(token); // Set token for bookmark service
+    _bookmarkService.setToken(token);
+    _imageService.setToken(token); // Set token for ImageService
 
     _loadCourseDetails();
   }
@@ -93,9 +102,9 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       final course = await _courseService.getCourseDetails(widget.courseId);
       final lessons = await _lessonService.getLessons(widget.courseId);
       final enrollments = await _enrollmentService.getEnrolledCourses();
-      final bookmarks = await _bookmarkService.getBookmarkedCourses(); // Fetch bookmarks
+      final bookmarks = await _bookmarkService.getBookmarkedCourses();
       final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
-      course.isBookmarked = bookmarkedIds.contains(course.id); // Set initial bookmark status
+      course.isBookmarked = bookmarkedIds.contains(course.id);
 
       setState(() {
         _course = course;
@@ -104,6 +113,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _isEnrolled = _enrollment != null;
         _isLoading = false;
       });
+      await _fetchInstructorImage(course.instructorName!); // Fetch instructor image
       _loadReviews();
     } catch (e) {
       setState(() {
@@ -111,6 +121,31 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _fetchInstructorImage(String instructorName) async {
+    final instructorId = await _authService.getUserIdByUsername(instructorName);
+    if (instructorId != null) {
+      final imageBytes = await _imageService.getUserImage(context, instructorId);
+      if (imageBytes != null) {
+        setState(() {
+          _instructorImage = imageBytes;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchStudentImage(String username) async {
+    if (_studentImages.containsKey(username)) return; // Avoid redundant calls
+    final studentId = await _authService.getUserIdByUsername(username);
+    if (studentId != null) {
+      final imageBytes = await _imageService.getUserImage(context, studentId);
+      if (imageBytes != null) {
+        setState(() {
+          _studentImages[username] = imageBytes;
+        });
+      }
     }
   }
 
@@ -126,6 +161,10 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _reviews = reviews;
         _isReviewsLoading = false;
       });
+      // Fetch images for all reviewers
+      for (var review in _reviews) {
+        await _fetchStudentImage(review.username);
+      }
     } catch (e) {
       setState(() {
         _reviewsErrorMessage = e.toString();
@@ -579,14 +618,21 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundColor: Colors.grey[200],
-              child: Text(
+              backgroundImage: _instructorImage != null
+                  ? MemoryImage(_instructorImage!)
+                  : null,
+              backgroundColor: _instructorImage == null
+                  ? Colors.grey[200]
+                  : null,
+              child: _instructorImage == null
+                  ? Text(
                 _course!.instructorName?[0] ?? 'I',
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
+              )
+                  : null,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -776,7 +822,21 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            leading: CircleAvatar(child: Text(review.username[0])),
+            leading: CircleAvatar(
+              radius: 24,
+              backgroundImage: _studentImages[review.username] != null
+                  ? MemoryImage(_studentImages[review.username]!)
+                  : null,
+              backgroundColor: _studentImages[review.username] == null
+                  ? Color(0xFFDB2777).withOpacity(0.1)
+                  : null,
+              child: _studentImages[review.username] == null
+                  ? Text(
+                review.username[0].toUpperCase(),
+                style: TextStyle(color: Color(0xFFDB2777)),
+              )
+                  : null,
+            ),
             title: Text(review.username),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
