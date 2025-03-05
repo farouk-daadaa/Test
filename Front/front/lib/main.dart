@@ -20,6 +20,7 @@ import 'package:front/services/admin_service.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:front/screens/homepage/HomeScreen.dart';
 import 'package:front/services/course_service.dart';
+import 'package:front/services/review_service.dart'; // Import ReviewService
 import 'package:provider/provider.dart';
 
 void main() {
@@ -45,6 +46,9 @@ class AppRoot extends StatelessWidget {
         ),
         ChangeNotifierProvider<AdminService>(
           create: (_) => AdminService(),
+        ),
+        Provider<ReviewService>(
+          create: (_) => ReviewService(baseUrl: 'http://192.168.1.13:8080'),
         ),
       ],
       child: const MyApp(),

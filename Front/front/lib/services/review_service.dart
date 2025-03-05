@@ -61,14 +61,16 @@ class ReviewService {
   Future<ReviewDTO> createReview(int courseId, int userId, double rating, String comment) async {
     try {
       final response = await _dio.post(
-        '/api/courses/$courseId/reviews',
+        '/api/reviews/courses/$courseId', // Corrected endpoint
         data: {
           'rating': rating,
           'comment': comment,
-          'userId': userId,
-        },
+        }, // userId is handled by backend authentication
       );
-      return ReviewDTO.fromJson(response.data);
+      if (response.statusCode == 201 || response.statusCode == 200) { // 201 for created
+        return ReviewDTO.fromJson(response.data);
+      }
+      throw Exception('Failed to create review: ${response.statusCode} - ${response.data}');
     } catch (e) {
       throw _handleError(e);
     }
@@ -134,7 +136,7 @@ class ReviewService {
         return Exception('Invalid request: ${e.response?.data?['message']}');
       }
       if (e.response?.statusCode == 404) {
-        return Exception('Resource not found');
+        return Exception('Resource not found: Please check the endpoint or server configuration');
       }
       return Exception(e.response?.data?['message'] ?? 'An error occurred');
     }

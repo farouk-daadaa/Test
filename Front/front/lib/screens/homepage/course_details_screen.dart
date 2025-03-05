@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,10 +11,11 @@ import '../../services/review_service.dart';
 import '../../services/enrollment_service.dart';
 import '../../services/lesson_progress_service.dart';
 import '../../services/bookmark_service.dart';
-import '../../services/image_service.dart'; // Import ImageService
+import '../../services/image_service.dart';
 import '../instructor/views/video_player_screen.dart';
 import 'payment_page.dart';
 import 'package:collection/collection.dart';
+import 'views/course_review_screen.dart';
 
 class CourseDetailsScreen extends StatefulWidget {
   final int courseId;
@@ -42,8 +42,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   late EnrollmentService _enrollmentService;
   late LessonProgressService _lessonProgressService;
   late BookmarkService _bookmarkService;
-  late ImageService _imageService; // Add ImageService
-  late AuthService _authService; // Add AuthService
+  late ImageService _imageService;
+  late AuthService _authService;
   CourseDTO? _course;
   List<LessonDTO> _lessons = [];
   List<ReviewDTO> _reviews = [];
@@ -55,8 +55,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   String? _reviewsErrorMessage;
   bool _isEnrolling = false;
   bool _isEnrolled = false;
-  Uint8List? _instructorImage; // Store instructor image
-  Map<String, Uint8List?> _studentImages = {}; // Map to store student images by username
+  Uint8List? _instructorImage;
+  Map<String, Uint8List?> _studentImages = {};
 
   @override
   void initState() {
@@ -84,15 +84,15 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
     _enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
     _lessonProgressService = LessonProgressService(baseUrl: 'http://192.168.1.13:8080');
     _bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
-    _imageService = ImageService(); // Initialize ImageService
-    _authService = authService; // Store AuthService
+    _imageService = ImageService();
+    _authService = authService;
     _courseService.setToken(token);
     _lessonService.setToken(token);
     _reviewService.setToken(token);
     _enrollmentService.setToken(token);
     _lessonProgressService.setToken(token);
     _bookmarkService.setToken(token);
-    _imageService.setToken(token); // Set token for ImageService
+    _imageService.setToken(token);
 
     _loadCourseDetails();
   }
@@ -113,7 +113,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _isEnrolled = _enrollment != null;
         _isLoading = false;
       });
-      await _fetchInstructorImage(course.instructorName!); // Fetch instructor image
+      await _fetchInstructorImage(course.instructorName!);
       _loadReviews();
     } catch (e) {
       setState(() {
@@ -137,7 +137,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
   }
 
   Future<void> _fetchStudentImage(String username) async {
-    if (_studentImages.containsKey(username)) return; // Avoid redundant calls
+    if (_studentImages.containsKey(username)) return;
     final studentId = await _authService.getUserIdByUsername(username);
     if (studentId != null) {
       final imageBytes = await _imageService.getUserImage(context, studentId);
@@ -161,7 +161,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _reviews = reviews;
         _isReviewsLoading = false;
       });
-      // Fetch images for all reviewers
       for (var review in _reviews) {
         await _fetchStudentImage(review.username);
       }
@@ -200,7 +199,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
           setState(() {
             _isEnrolling = false;
           });
-
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Enrollment failed: ${e.toString()}'),
@@ -237,7 +235,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       setState(() {
         _isEnrolling = false;
       });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Unenrollment failed: ${e.toString()}'),
@@ -268,6 +265,11 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         _enrollment = updatedEnrollment;
       });
       widget.onLessonCompleted?.call(updatedEnrollment);
+
+      if (progress == 100) {
+        _showCompletionDialog();
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Lesson marked as completed')),
       );
@@ -276,6 +278,163 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         SnackBar(content: Text('Failed to mark lesson: $e')),
       );
     }
+  }
+
+  void _showCompletionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.pink[50]!, Colors.white],
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star, color: Colors.amber, size: 24),
+                    const SizedBox(width: 8),
+                    Icon(Icons.play_circle_outline, color: Colors.green, size: 24),
+                    const SizedBox(width: 8),
+                    Icon(Icons.change_history, color: Colors.blue, size: 24),
+                    const SizedBox(width: 8),
+                    Icon(Icons.circle, color: Colors.orange, size: 24),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/images/completion_image.png',
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 120,
+                      height: 120,
+                      color: Colors.grey[200],
+                      child: const Icon(Icons.image_not_supported, size: 48),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Course Completed',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.pink,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Complete your Course. Please Write a Review',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    5,
+                        (index) => Icon(
+                      index < 4 ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CourseReviewScreen(
+                          courseId: _course!.id!,
+                          courseImageUrl: _course!.imageUrl,
+                          title: _course!.title,
+                          instructorName: _course!.instructorName ?? 'Unknown Instructor',
+                          lessonCount: _lessons.length,
+                          rating: _course!.rating != null ? Decimal.parse(_course!.rating!.toString()) : null,
+                        ),
+                      ),
+                    );
+                    _loadReviews();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDB2777),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Write a Review',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 24,
+                            height: 24,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward, color: const Color(0xFFDB2777), size: 16),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: const Text(
+                    'Go Back to Course',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _toggleBookmark() async {
@@ -306,7 +465,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       );
     } catch (e) {
       setState(() {
-        _course!.isBookmarked = !newState; // Revert on failure
+        _course!.isBookmarked = !newState;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -805,56 +964,199 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       );
     }
 
-    if (_reviews.isEmpty) {
-      return Center(
-        child: Text(
-          'No reviews yet',
-          style: TextStyle(color: Colors.grey[600]),
+    if (_reviews.isEmpty && _isEnrolled && _enrollment?.progressPercentage == 100) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'No reviews yet',
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CourseReviewScreen(
+                      courseId: _course!.id!,
+                      courseImageUrl: _course!.imageUrl,
+                      title: _course!.title,
+                      instructorName: _course!.instructorName ?? 'Unknown Instructor',
+                      lessonCount: _lessons.length,
+                      rating: _course!.rating != null ? Decimal.parse(_course!.rating!.toString()) : null,
+                    ),
+                  ),
+                );
+                _loadReviews(); // Refresh reviews after submission
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDB2777),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Write a Review',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _reviews.length,
-      itemBuilder: (context, index) {
-        final review = _reviews[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            leading: CircleAvatar(
-              radius: 24,
-              backgroundImage: _studentImages[review.username] != null
-                  ? MemoryImage(_studentImages[review.username]!)
-                  : null,
-              backgroundColor: _studentImages[review.username] == null
-                  ? Color(0xFFDB2777).withOpacity(0.1)
-                  : null,
-              child: _studentImages[review.username] == null
-                  ? Text(
-                review.username[0].toUpperCase(),
-                style: TextStyle(color: Color(0xFFDB2777)),
-              )
-                  : null,
-            ),
-            title: Text(review.username),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 16),
-                    const SizedBox(width: 4),
-                    Text('${review.rating}'),
-                  ],
+    return Column(
+      children: [
+        if (_isEnrolled && _enrollment?.progressPercentage == 100)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ElevatedButton(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CourseReviewScreen(
+                      courseId: _course!.id!,
+                      courseImageUrl: _course!.imageUrl,
+                      title: _course!.title,
+                      instructorName: _course!.instructorName ?? 'Unknown Instructor',
+                      lessonCount: _lessons.length,
+                      rating: _course!.rating != null ? Decimal.parse(_course!.rating!.toString()) : null,
+                    ),
+                  ),
+                );
+                _loadReviews(); // Refresh reviews after submission
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDB2777),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 4),
-                Text(review.comment),
-              ],
+              ),
+              child: const Text(
+                'Write a Review',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
-        );
-      },
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _reviews.length,
+            itemBuilder: (context, index) {
+              final review = _reviews[index];
+              final isCurrentUser = _authService.username != null &&
+                  review.username == _authService.username;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    radius: 24,
+                    backgroundImage: _studentImages[review.username] != null
+                        ? MemoryImage(_studentImages[review.username]!)
+                        : null,
+                    backgroundColor: _studentImages[review.username] == null
+                        ? Color(0xFFDB2777).withOpacity(0.1)
+                        : null,
+                    child: _studentImages[review.username] == null
+                        ? Text(
+                      review.username[0].toUpperCase(),
+                      style: TextStyle(color: Color(0xFFDB2777)),
+                    )
+                        : null,
+                  ),
+                  title: Text(review.username),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.star, color: Colors.amber, size: 16),
+                          const SizedBox(width: 4),
+                          Text('${review.rating}'),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(review.comment),
+                    ],
+                  ),
+                  trailing: isCurrentUser
+                      ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () async {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => CourseReviewScreen(
+                                courseId: _course!.id!,
+                                courseImageUrl: _course!.imageUrl,
+                                title: _course!.title,
+                                instructorName: _course!.instructorName ?? 'Unknown Instructor',
+                                lessonCount: _lessons.length,
+                                rating: _course!.rating != null ? Decimal.parse(_course!.rating!.toString()) : null,
+                                initialReview: review, // Pass the existing review for editing
+                              ),
+                            ),
+                          );
+                          _loadReviews(); // Refresh reviews after editing
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () async {
+                          try {
+                            final userId = await _authService.getUserIdByUsername(_authService.username ?? '');
+                            if (userId != null) {
+                              await _reviewService.deleteReview(review.id!, userId);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Review deleted successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                              _loadReviews(); // Refresh reviews after deletion
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Unable to retrieve user ID.'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to delete review: ${e.toString()}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  )
+                      : null,
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
