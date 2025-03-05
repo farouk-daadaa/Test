@@ -12,6 +12,7 @@ import 'course_card.dart';
 import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
 import 'views/popular_courses_screen.dart';
+import 'package:collection/collection.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
+  List<CourseDTO> _featuredCourses = []; // For featured courses (kept for potential reuse)
+  Map<String, InstructorProfile> _topInstructors = {}; // Store top instructors
 
   @override
   void initState() {
@@ -43,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen> {
       enrollmentService.setToken(token);
       await _fetchEnrolledCourses(token);
       await _fetchPopularCourses(token);
+      await _fetchFeaturedCourses(token); // Kept for potential reuse
+      await _fetchTopInstructors(token); // Fetch top instructors
     }
   }
 
@@ -92,6 +97,54 @@ class _HomeScreenState extends State<HomeScreen> {
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
     setState(() {
       _popularCourses = courses;
+    });
+  }
+
+  Future<void> _fetchFeaturedCourses(String token) async {
+    // Placeholder: Replace with actual API call for featured courses
+    final allCourses = await courseService.getAllCourses();
+    setState(() {
+      _featuredCourses = allCourses.where((course) => (course.rating ?? 0.0) > 4.0).take(5).toList();
+    });
+  }
+
+  Future<void> _fetchTopInstructors(String token) async {
+    final allCourses = await courseService.getAllCourses();
+    // Aggregate instructors based on average rating (mock logic)
+    final instructorRatings = <String, List<double>>{};
+    for (var course in allCourses) {
+      if (course.instructorName != null && course.rating != null) {
+        instructorRatings.putIfAbsent(course.instructorName!, () => []).add(course.rating!);
+      }
+    }
+
+    final topInstructors = instructorRatings.map((instructorName, ratings) {
+      final avgRating = ratings.reduce((a, b) => a + b) / ratings.length;
+      return MapEntry(
+        instructorName,
+        InstructorProfile(
+          name: instructorName,
+          averageRating: avgRating,
+          courseCount: ratings.length,
+        ),
+      );
+    });
+
+    // Sort by average rating and take top 5
+    setState(() {
+      _topInstructors = Map.fromIterables(
+        topInstructors.values
+            .toList()
+            .where((profile) => profile.averageRating > 0)
+            .sorted((a, b) => b.averageRating.compareTo(a.averageRating))
+            .take(5)
+            .map((profile) => profile.name), // Use instructor names as keys
+        topInstructors.values
+            .toList()
+            .where((profile) => profile.averageRating > 0)
+            .sorted((a, b) => b.averageRating.compareTo(a.averageRating))
+            .take(5), // Use the filtered and sorted profiles as values
+      );
     });
   }
 
@@ -160,7 +213,12 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSearchBar(),
               const CategoriesSection(),
               _buildPopularCourses(),
-              _buildContinueLearning(),
+              // Conditionally render Continue Learning only if there are ongoing courses
+              if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
+                _buildContinueLearning(),
+              // Removed _buildQuickStartGuide()
+              // Removed _buildFeaturedCourses()
+              _buildTopInstructors(),
               const SizedBox(height: 80),
             ],
           ),
@@ -543,6 +601,85 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Removed _buildQuickStartGuide() method
+  // Removed _buildFeaturedCourses() method
+  Widget _buildTopInstructors() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Top Instructors',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PopularCoursesScreen(), // Placeholder; replace with TopInstructorsScreen
+                    ),
+                  );
+                },
+                child: Text(
+                  'See all',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 120, // Fixed height, but content will be constrained
+          child: _topInstructors.isEmpty
+              ? const Center(child: Text('No top instructors available'))
+              : ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _topInstructors.length,
+            itemBuilder: (context, index) {
+              final profile = _topInstructors.values.elementAt(index);
+              return Padding(
+                  padding: const EdgeInsets.only(right: 16),
+              child: GestureDetector(
+              child: Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Container(
+              width: 100,
+              padding: const EdgeInsets.all(8),
+              child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+              CircleAvatar(
+              radius: 30,
+              backgroundColor: AppColors.primary.withOpacity(0.1),
+              ),
+
+              ],
+              ),
+              ),
+              ),
+              )
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<List<CourseDTO>> _getCoursesWithToken() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
@@ -565,4 +702,17 @@ class _HomeScreenState extends State<HomeScreen> {
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
     return courses;
   }
+}
+
+// Simple model for instructor profile
+class InstructorProfile {
+  final String name;
+  final double averageRating;
+  final int courseCount;
+
+  InstructorProfile({
+    required this.name,
+    required this.averageRating,
+    required this.courseCount,
+  });
 }

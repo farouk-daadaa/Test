@@ -1,11 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:front/services/course_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../services/auth_service.dart';
+import 'package:front/services/auth_service.dart';
 import '/screens/instructor/views/lessons_tab_view.dart';
 import 'package:front/services/review_service.dart';
-import 'package:provider/provider.dart'; // For AuthService
+import 'package:provider/provider.dart';
+import 'package:front/services/image_service.dart';
 
 class InstructorCourseDetailsScreen extends StatefulWidget {
   const InstructorCourseDetailsScreen({Key? key}) : super(key: key);
@@ -19,6 +22,8 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
   int _lessonsCount = 0;
   late CourseService _courseService;
   late ReviewService _reviewService;
+  late ImageService _imageService;
+  late AuthService _authService;
   CourseDTO? _course;
   List<ReviewDTO> _reviews = [];
   bool _isLoading = true;
@@ -26,6 +31,8 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
   String? _errorMessage;
   bool _isReviewsLoading = false;
   String? _reviewsErrorMessage;
+  Uint8List? _instructorImage; // Instructor image
+  Map<String, Uint8List?> _studentImages = {}; // Map to store student images by username
 
   @override
   void initState() {
@@ -49,9 +56,11 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
 
     _courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
     _reviewService = ReviewService(baseUrl: 'http://192.168.1.13:8080');
-
+    _imageService = ImageService();
+    _authService = authService;
     _courseService.setToken(token);
     _reviewService.setToken(token);
+    _imageService.setToken(token);
 
     _loadCourseDetails();
   }
@@ -59,13 +68,14 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
   Future<void> _loadCourseDetails() async {
     try {
       final course = ModalRoute.of(context)!.settings.arguments as CourseDTO;
-      if (course.id == null) {
-        throw Exception("Invalid course ID");
+      if (course.id == null || course.instructorName == null) {
+        throw Exception("Invalid course or instructor name");
       }
       setState(() {
         _course = course;
         _isLoading = false;
       });
+      await _fetchInstructorImage(course.instructorName!);
       _loadReviews();
     } catch (e) {
       setState(() {
@@ -73,6 +83,31 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _fetchInstructorImage(String instructorName) async {
+    final instructorId = await _authService.getUserIdByUsername(instructorName);
+    if (instructorId != null) {
+      final imageBytes = await _imageService.getUserImage(context, instructorId);
+      if (imageBytes != null) {
+        setState(() {
+          _instructorImage = imageBytes;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchStudentImage(String username) async {
+    if (_studentImages.containsKey(username)) return; // Avoid redundant calls
+    final studentId = await _authService.getUserIdByUsername(username);
+    if (studentId != null) {
+      final imageBytes = await _imageService.getUserImage(context, studentId);
+      if (imageBytes != null) {
+        setState(() {
+          _studentImages[username] = imageBytes;
+        });
+      }
     }
   }
 
@@ -88,6 +123,10 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
         _reviews = reviews;
         _isReviewsLoading = false;
       });
+      // Fetch images for all reviewers
+      for (var review in _reviews) {
+        await _fetchStudentImage(review.username);
+      }
     } catch (e) {
       setState(() {
         _reviewsErrorMessage = e.toString();
@@ -215,14 +254,22 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
-                              child: Text(
+                              radius: 24,
+                              backgroundImage: _instructorImage != null
+                                  ? MemoryImage(_instructorImage!)
+                                  : null,
+                              backgroundColor: _instructorImage == null
+                                  ? Color(0xFFDB2777).withOpacity(0.1)
+                                  : null,
+                              child: _instructorImage == null
+                                  ? Text(
                                 _course!.instructorName?[0] ?? 'I',
                                 style: TextStyle(
                                   color: Color(0xFFDB2777),
                                   fontWeight: FontWeight.bold,
                                 ),
-                              ),
+                              )
+                                  : null,
                             ),
                             SizedBox(width: 8),
                             Text(
@@ -295,7 +342,7 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
 
                   // Tab Content
                   SizedBox(
-                    height: 500, // Fixed height for content
+                    height: 500,
                     child: TabBarView(
                       controller: _tabController,
                       children: [
@@ -454,11 +501,19 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
-              child: Text(
+              radius: 24,
+              backgroundImage: _studentImages[review.username] != null
+                  ? MemoryImage(_studentImages[review.username]!)
+                  : null,
+              backgroundColor: _studentImages[review.username] == null
+                  ? Color(0xFFDB2777).withOpacity(0.1)
+                  : null,
+              child: _studentImages[review.username] == null
+                  ? Text(
                 review.username[0].toUpperCase(),
                 style: TextStyle(color: Color(0xFFDB2777)),
-              ),
+              )
+                  : null,
             ),
             title: Text(review.username),
             subtitle: Column(

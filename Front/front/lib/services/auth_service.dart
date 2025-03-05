@@ -250,4 +250,23 @@ class AuthService with ChangeNotifier {
       return false;
     }
   }
+
+  Future<int?> getUserIdByUsername(String username) async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    final response = await http.get(
+      Uri.parse('http://192.168.1.13:8080/api/auth/user/id/$username'), // Updated endpoint
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['id'] as int?;
+    } else {
+      print('Failed to fetch user ID: ${response.statusCode} - ${response.body}');
+      return null;
+    }
+  }
+
 }
