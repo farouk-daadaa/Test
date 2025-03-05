@@ -268,7 +268,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: Colors.black),
-        onPressed: () => Navigator.pop(context),
+        onPressed: () => Navigator.pop(context), // Simple back navigation
       ),
       title: const Text(
         'Bookmarks',

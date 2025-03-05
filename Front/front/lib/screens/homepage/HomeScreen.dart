@@ -25,7 +25,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
+  int _selectedIndex = 0; // Default to home index
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
@@ -212,7 +212,25 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         break;
       case 2: // Bookmarks
-        Navigator.pushNamed(context, '/bookmarks');
+        Navigator.pushNamed(context, '/bookmarks').then((_) {
+          setState(() {
+            _selectedIndex = 0; // Reset to Home on return from Bookmarks
+          });
+        });
+        break;
+      case 3: // Chat
+        Navigator.pushNamed(context, '/chat').then((_) {
+          setState(() {
+            _selectedIndex = 0; // Reset to Home on return
+          });
+        });
+        break;
+      case 4: // Profile
+        Navigator.pushNamed(context, '/profile').then((_) {
+          setState(() {
+            _selectedIndex = 0; // Reset to Home on return
+          });
+        });
         break;
     }
   }
@@ -229,11 +247,15 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSearchBar(),
               const CategoriesSection(),
               _buildPopularCourses(),
-              _buildTopInstructors(), // Moved to appear before Continue Learning
+              _buildTopInstructors(), // Appears first
               // Conditionally render Continue Learning only if there are ongoing courses
               if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
-                _buildContinueLearning(),
-              const SizedBox(height: 80),
+                Column(
+                  children: [
+                    _buildContinueLearning(),
+                    const SizedBox(height: 80), // Move the spacing inside the conditional
+                  ],
+                ),
             ],
           ),
         ),
@@ -640,7 +662,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopInstructors() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start, // Align content to the start
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -676,7 +697,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         SizedBox(
-          height: 120, // Reduced height to minimize space
+          height: 150, // Increased height to accommodate name below image
           child: _topInstructors.isEmpty
               ? const Center(child: Text('No top instructors available'))
               : ListView.builder(
@@ -688,7 +709,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min, // Minimize vertical space
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     CircleAvatar(
                       radius: 30,
@@ -709,7 +730,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       )
                           : null,
                     ),
-                    const SizedBox(height: 8), // Reduced space between avatar and name
+                    const SizedBox(height: 8),
                     Text(
                       instructorName,
                       style: TextStyle(
@@ -727,7 +748,6 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
         ),
-        const SizedBox(height: 0.10), // Reduced space below the section
       ],
     );
   }
