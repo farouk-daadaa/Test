@@ -15,8 +15,10 @@ import 'course_card.dart';
 import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
 import 'views/popular_courses_screen.dart';
+import 'filter_screen.dart'; // Import the new filter screen
 import 'package:collection/collection.dart';
 
+// Search Results Screen
 class SearchResultsScreen extends StatelessWidget {
   final List<CourseDTO> searchResults;
   final CourseService courseService;
@@ -207,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchFeaturedCourses(String token) async {
     final allCourses = await courseService.getAllCourses();
     setState(() {
-      _featuredCourses = allCourses.where((course) => (course.rating ?? 0.0) > 4.0).take(5).toList();
+      _featuredCourses = allCourses.where((course) => (course.rating ?? 0) > 4.0).take(5).toList();
     });
   }
 
@@ -495,13 +497,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
-    // Filter courses based on the query (only by title)
+    // Filter courses based on the query (only by title) and navigate
     final searchResults = _popularCourses.where((course) {
       final queryLower = query.toLowerCase();
       return course.title.toLowerCase().contains(queryLower);
     }).toList();
 
-    // Navigate to the search results screen
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -515,6 +516,35 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     _removeOverlay();
+  }
+
+  // Inside _HomeScreenState class
+  void _openFilterScreen() {
+    if (_popularCourses.isEmpty) {
+      print('Warning: _popularCourses is empty, filtering may not work');
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FilterScreen(
+          allCourses: _popularCourses,
+          onApply: (filteredCourses) {
+            // Navigate to SearchResultsScreen with the filtered courses
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SearchResultsScreen(
+                  searchResults: filteredCourses,
+                  courseService: courseService,
+                  bookmarkService: bookmarkService,
+                  onBookmarkChanged: updateBookmarkStatus,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -617,7 +647,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            child: const Icon(Icons.tune, color: Colors.white),
+            child: GestureDetector(
+              onTap: _openFilterScreen, // Open filter screen on tap
+              child: const Icon(Icons.tune, color: Colors.white),
+            ),
           ),
         ],
       ),
