@@ -5,7 +5,6 @@ import 'package:front/screens/instructor/views/MyCoursesView.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 
-
 class InstructorDashboardScreen extends StatefulWidget {
   const InstructorDashboardScreen({Key? key}) : super(key: key);
 
@@ -15,6 +14,13 @@ class InstructorDashboardScreen extends StatefulWidget {
 
 class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   int _selectedIndex = 0;
+
+  // Define the callback as a class method
+  void onCreateCoursePressed() {
+    setState(() {
+      _selectedIndex = 1; // Switch to CreateCourseView tab
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,20 +123,22 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
       child: _getView(_selectedIndex),
     );
   }
+
   Widget _getView(int index) {
     switch (index) {
       case 0:
-        return MyCoursesView(key: ValueKey('courses'));
+        return MyCoursesView(
+          key: ValueKey('courses'),
+          onCreateCoursePressed: onCreateCoursePressed, // Pass the class method
+        );
       case 1:
         return CreateCourseView(key: ValueKey('create'));
       case 2:
         return CourseAnalyticsView(
           key: ValueKey('analytics'),
         );
-        default:
+      default:
         return Center(child: Text('Select a view'));
     }
   }
-  }
-
-
+}

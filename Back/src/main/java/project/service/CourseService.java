@@ -91,9 +91,7 @@ public class CourseService {
         course.setPrice(courseDTO.getPrice());
 
         if (image != null) {
-            // Delete old image if exists
             deleteImage(course.getImageUrl());
-            // Upload and set new image
             String imageUrl = uploadImage(image);
             course.setImageUrl(imageUrl);
         }
@@ -139,49 +137,41 @@ public class CourseService {
                 .collect(Collectors.toList());
     }
 
-    // This method is used internally and still returns the Course entity
     private Course getCourseEntityById(Long id) {
         return courseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
     }
+
     private String uploadImage(MultipartFile image) throws IOException {
         if (image.isEmpty()) {
             throw new IllegalArgumentException("Image file is empty");
         }
 
-        // Create the upload directory if it doesn't exist
         Path uploadPath = Paths.get(UPLOAD_DIR);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }
 
-        // Generate a unique file name
         String originalFilename = image.getOriginalFilename();
         String extension = originalFilename != null ? originalFilename.substring(originalFilename.lastIndexOf(".")) : ".jpg";
         String fileName = UUID.randomUUID().toString() + extension;
         Path filePath = uploadPath.resolve(fileName);
 
-        // Compress and save the image
         BufferedImage originalImage = ImageIO.read(image.getInputStream());
 
-        // Create output stream to save compressed image
         OutputStream os = Files.newOutputStream(filePath);
 
-        // Get image writers for the extension
         ImageWriter writer = ImageIO.getImageWritersByFormatName(extension.substring(1)).next();
 
-        // Set compression
         ImageWriteParam param = writer.getDefaultWriteParam();
         if (param.canWriteCompressed()) {
             param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
             param.setCompressionQuality(0.7f);
         }
 
-        // Write the compressed image
         writer.setOutput(ImageIO.createImageOutputStream(os));
         writer.write(null, new IIOImage(originalImage, null, null), param);
 
-        // Clean up
         writer.dispose();
         os.close();
 
@@ -198,5 +188,11 @@ public class CourseService {
                 e.printStackTrace();
             }
         }
+    }
+
+    public List<CourseDTO> getCoursesByInstructorId(Long instructorId) {
+        return courseRepository.findByInstructorId(instructorId).stream()
+                .map(CourseDTO::fromEntity) // Fixed to use fromEntity
+                .collect(Collectors.toList());
     }
 }

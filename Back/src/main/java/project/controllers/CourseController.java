@@ -9,6 +9,10 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import project.dto.CourseDTO;
+import project.models.Instructor;
+import project.models.UserEntity;
+import project.repository.InstructorRepository;
+import project.repository.UserRepository;
 import project.service.CourseService;
 
 import javax.validation.Valid;
@@ -21,6 +25,12 @@ public class CourseController {
 
     @Autowired
     private CourseService courseService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private InstructorRepository instructorRepository;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal)")
@@ -62,4 +72,16 @@ public class CourseController {
         List<CourseDTO> courses = courseService.getAllCourses();
         return ResponseEntity.ok(courses);
     }
+
+    @GetMapping("/my")
+    @PreAuthorize("hasRole('INSTRUCTOR') and @userSecurity.isApprovedInstructor(authentication.principal)")
+    public ResponseEntity<List<CourseDTO>> getMyCourses(Authentication authentication) {
+        UserEntity userEntity = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Instructor instructor = instructorRepository.findByUser(userEntity)
+                .orElseThrow(() -> new RuntimeException("Instructor not found"));
+        List<CourseDTO> myCourses = courseService.getCoursesByInstructorId(instructor.getId());
+        return ResponseEntity.ok(myCourses);
+    }
+
 }

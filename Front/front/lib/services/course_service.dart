@@ -117,20 +117,22 @@ class CourseService {
 
   Future<List<CourseDTO>> getMyCourses() async {
     try {
-      final response = await _dio.get('/api/courses');
+      final response = await _dio.get('/api/courses/my'); // Already correct
       if (response.statusCode == 200) {
         return (response.data as List)
             .map((json) => CourseDTO.fromJson(json))
             .toList();
       }
-      throw Exception('Failed to load courses: ${response.statusCode}');
+      throw Exception('Failed to load my courses: ${response.statusCode}');
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
         throw Exception('Unauthorized: Please log in again');
       }
-      throw Exception('Failed to load courses: ${e.message}');
+      throw Exception('Failed to load my courses: ${e.message}');
     }
   }
+
+
 
   Future<CourseDTO> createCourse({required CourseDTO course, File? imageFile}) async {
     try {
@@ -248,5 +250,7 @@ class CourseService {
       throw Exception('Failed to load courses: ${e.message}');
     }
   }
+
+
 
 }

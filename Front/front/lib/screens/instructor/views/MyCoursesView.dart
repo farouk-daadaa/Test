@@ -5,7 +5,9 @@ import '../../../services/auth_service.dart';
 import '../../../services/course_service.dart';
 
 class MyCoursesView extends StatefulWidget {
-  const MyCoursesView({Key? key}) : super(key: key);
+  final VoidCallback? onCreateCoursePressed; // Add callback parameter
+
+  const MyCoursesView({Key? key, this.onCreateCoursePressed}) : super(key: key);
 
   @override
   _MyCoursesViewState createState() => _MyCoursesViewState();
@@ -179,8 +181,12 @@ class _MyCoursesViewState extends State<MyCoursesView> {
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () {
-                Navigator.pushNamed(context, '/create-course')
-                    .then((_) => _loadCourses());
+                // Use the callback to switch to CreateCourseView
+                if (widget.onCreateCoursePressed != null) {
+                  widget.onCreateCoursePressed!();
+                } else {
+                  print('Error: onCreateCoursePressed callback is null');
+                }
               },
               icon: Icon(Icons.add),
               label: Text('Create your first course'),
@@ -343,7 +349,6 @@ class _MyCoursesViewState extends State<MyCoursesView> {
                         Icons.attach_money,
                         course.pricingType == PricingType.FREE ? 'Free' : course.price.toString(),
                       ),
-
                       const SizedBox(width: 8),
                       _buildInfoChip(
                         Icons.school,

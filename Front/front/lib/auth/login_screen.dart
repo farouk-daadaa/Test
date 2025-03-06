@@ -135,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
       value == null || value.isEmpty
           ? 'Please enter your username'
           : null,
-      onChanged: (_) => setState(() => _errorMessage = null),
+      onChanged: (_) => setState(() => _errorMessage = null), // Clear error on change
     );
   }
 
@@ -172,7 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
           value == null || value.isEmpty
               ? 'Please enter your password'
               : null,
-          onChanged: (_) => setState(() => _errorMessage = null),
+          onChanged: (_) => setState(() => _errorMessage = null), // Clear error on change
         );
       },
     );
@@ -223,7 +223,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-
   Widget _buildSignupOption() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -269,8 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Navigator.of(context).pushReplacementNamed('/admin-dashboard');
           } else if (userRole == 'INSTRUCTOR') {
             if (instructorStatus == 'APPROVED') {
-              Navigator.of(context).pushReplacementNamed(
-                  '/instructor-dashboard');
+              Navigator.of(context).pushReplacementNamed('/instructor-dashboard');
             } else {
               Navigator.of(context).pushReplacementNamed('/pending-approval');
             }
@@ -290,6 +288,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 : 'An unexpected error occurred';
           });
         }
+      } finally {
+        setState(() {
+          _isLoading = false; // Reset loading state after attempt
+        });
       }
     }
   }

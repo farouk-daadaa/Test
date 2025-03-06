@@ -8,7 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
-import '../../services/image_service.dart'; // Import ImageService
+import '../../services/image_service.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
@@ -16,6 +16,84 @@ import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
 import 'views/popular_courses_screen.dart';
 import 'package:collection/collection.dart';
+
+class SearchResultsScreen extends StatelessWidget {
+  final List<CourseDTO> searchResults;
+  final CourseService courseService;
+  final BookmarkService bookmarkService;
+  final Function(int, bool) onBookmarkChanged;
+
+  const SearchResultsScreen({
+    super.key,
+    required this.searchResults,
+    required this.courseService,
+    required this.bookmarkService,
+    required this.onBookmarkChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Search Results'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      body: searchResults.isEmpty
+          ? const Center(
+        child: Text(
+          'No courses found',
+          style: TextStyle(
+            fontSize: 18,
+            color: AppColors.textGray,
+          ),
+        ),
+      )
+          : ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: searchResults.length,
+        itemBuilder: (context, index) {
+          final course = searchResults[index];
+          return CourseCard(
+            course: course,
+            courseService: courseService,
+            bookmarkService: bookmarkService,
+            isBookmarked: course.isBookmarked,
+            onTap: () async {
+              await Navigator.pushNamed(
+                context,
+                '/course-details',
+                arguments: {
+                  'courseId': course.id,
+                  'onEnrollmentChanged': () async {
+                    final token = await Provider.of<AuthService>(context, listen: false).getToken();
+                    if (token != null) {
+                      // Assuming there's a way to refresh enrolled courses in the parent
+                    }
+                  },
+                  'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
+                    // Assuming there's a way to update enrollment in the parent
+                  },
+                },
+              );
+            },
+            onBookmarkChanged: (isBookmarked) {
+              onBookmarkChanged(course.id!, isBookmarked);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    isBookmarked ? 'Course added to bookmarks' : 'Course removed from bookmarks',
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,22 +103,40 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0; // Default to home index
+  int _selectedIndex = 0;
   final CourseService courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
-  final ImageService imageService = ImageService(); // Initialize ImageService
-  late AuthService _authService; // Declare _authService as late
+  final ImageService imageService = ImageService();
+  late AuthService _authService;
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
-  List<CourseDTO> _featuredCourses = []; // For featured courses (kept for potential reuse)
-  List<String> _topInstructors = []; // Store top instructor names
-  Map<String, Uint8List?> _instructorImages = {}; // Map to store instructor images by name
+  List<CourseDTO> _featuredCourses = [];
+  List<String> _topInstructors = [];
+  Map<String, Uint8List?> _instructorImages = {};
+
+  // Search-related variables
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  OverlayEntry? _overlayEntry;
+  List<String> _recentSearches = [];
+  List<String> _suggestions = [];
+  final GlobalKey _searchContainerKey = GlobalKey(); // GlobalKey for search bar
 
   @override
   void initState() {
     super.initState();
     _initializeServices();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+    _searchController.addListener(_onSearchTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _removeOverlay();
+    super.dispose();
   }
 
   Future<void> _initializeServices() async {
@@ -50,12 +146,12 @@ class _HomeScreenState extends State<HomeScreen> {
       courseService.setToken(token);
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
-      imageService.setToken(token); // Set token for ImageService
-      _authService = authService; // Initialize _authService
+      imageService.setToken(token);
+      _authService = authService;
       await _fetchEnrolledCourses(token);
       await _fetchPopularCourses(token);
-      await _fetchFeaturedCourses(token); // Kept for potential reuse
-      await _fetchTopInstructors(token, context); // Pass token and context
+      await _fetchFeaturedCourses(token);
+      await _fetchTopInstructors(token, context);
     }
   }
 
@@ -109,7 +205,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetchFeaturedCourses(String token) async {
-    // Placeholder: Replace with actual API call for featured courses
     final allCourses = await courseService.getAllCourses();
     setState(() {
       _featuredCourses = allCourses.where((course) => (course.rating ?? 0.0) > 4.0).take(5).toList();
@@ -118,7 +213,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchTopInstructors(String token, BuildContext context) async {
     final allCourses = await courseService.getAllCourses();
-    // Aggregate instructors based on average rating
     final instructorRatings = <String, List<double>>{};
     for (var course in allCourses) {
       if (course.instructorName != null && course.rating != null) {
@@ -126,7 +220,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // Sort by average rating and take top 5
     final topInstructors = instructorRatings.entries
         .map((entry) => MapEntry(entry.key, entry.value.reduce((a, b) => a + b) / entry.value.length))
         .where((entry) => entry.value > 0)
@@ -139,20 +232,19 @@ class _HomeScreenState extends State<HomeScreen> {
       _topInstructors = topInstructors;
     });
 
-    // Fetch images for top instructors
     for (var instructorName in _topInstructors) {
       await _fetchInstructorImage(instructorName, context, token);
     }
   }
 
   Future<void> _fetchInstructorImage(String instructorName, BuildContext context, String token) async {
-    if (_instructorImages.containsKey(instructorName)) return; // Avoid redundant calls
+    if (_instructorImages.containsKey(instructorName)) return;
     final instructorId = await _authService.getUserIdByUsername(instructorName);
     if (instructorId != null) {
-      print('Fetching image for $instructorName with ID: $instructorId'); // Debug log
+      print('Fetching image for $instructorName with ID: $instructorId');
       final imageBytes = await imageService.getUserImage(context, instructorId);
       if (imageBytes != null) {
-        print('Image fetched for $instructorName: ${imageBytes.length} bytes'); // Debug log
+        print('Image fetched for $instructorName: ${imageBytes.length} bytes');
         setState(() {
           _instructorImages[instructorName] = imageBytes;
         });
@@ -202,37 +294,227 @@ class _HomeScreenState extends State<HomeScreen> {
           '/my-courses',
           arguments: (int newIndex) {
             setState(() {
-              _selectedIndex = newIndex; // Reset to Home (0) when returning
+              _selectedIndex = newIndex;
             });
           },
         ).then((_) {
           setState(() {
-            _selectedIndex = 0; // Ensure reset to Home on return
+            _selectedIndex = 0;
           });
         });
         break;
       case 2: // Bookmarks
         Navigator.pushNamed(context, '/bookmarks').then((_) {
           setState(() {
-            _selectedIndex = 0; // Reset to Home on return from Bookmarks
+            _selectedIndex = 0;
           });
         });
         break;
       case 3: // Chat
         Navigator.pushNamed(context, '/chat').then((_) {
           setState(() {
-            _selectedIndex = 0; // Reset to Home on return
+            _selectedIndex = 0;
           });
         });
         break;
       case 4: // Profile
         Navigator.pushNamed(context, '/profile').then((_) {
           setState(() {
-            _selectedIndex = 0; // Reset to Home on return
+            _selectedIndex = 0;
           });
         });
         break;
     }
+  }
+
+  // Handle search focus changes to show/hide suggestions
+  void _onSearchFocusChanged() {
+    if (_searchFocusNode.hasFocus) {
+      _showOverlay();
+    } else {
+      _removeOverlay();
+    }
+  }
+
+  // Update suggestions as the user types (only match course titles)
+  void _onSearchTextChanged() {
+    final query = _searchController.text.toLowerCase();
+    if (query.isEmpty) {
+      setState(() {
+        _suggestions = [];
+      });
+    } else {
+      // Generate suggestions based on course titles only
+      final uniqueSuggestions = <String>{};
+      for (final course in _popularCourses) {
+        if (course.title.toLowerCase().contains(query)) {
+          uniqueSuggestions.add(course.title);
+        }
+      }
+      setState(() {
+        _suggestions = uniqueSuggestions
+            .where((suggestion) => suggestion.length <= 50)
+            .take(5)
+            .toList();
+      });
+    }
+    _showOverlay();
+  }
+
+  // Show the suggestions overlay below the search bar
+  void _showOverlay() {
+    _removeOverlay();
+    final query = _searchController.text;
+
+    final suggestionsToShow = query.isEmpty ? _recentSearches : _suggestions;
+
+    if (suggestionsToShow.isEmpty && query.isEmpty && _recentSearches.isEmpty) return;
+
+    // Use the GlobalKey to get the search bar's RenderBox
+    final RenderBox? renderBox = _searchContainerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) {
+      print('Search bar render box not found');
+      return;
+    }
+
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    // Position the overlay just below the search bar
+    final topPosition = offset.dy + size.height;
+
+    // Calculate dynamic height based on number of suggestions
+    const double listTileHeight = 56.0; // Approximate height of a ListTile
+    const double headerHeight = 32.0; // Approximate height of "Recent Searches" header with padding
+    final int suggestionCount = suggestionsToShow.length;
+    final double dynamicHeight = query.isEmpty && _recentSearches.isNotEmpty
+        ? headerHeight + (suggestionCount * listTileHeight)
+        : suggestionCount * listTileHeight;
+    const double minHeight = listTileHeight; // Minimum height for one suggestion
+    const double maxHeight = 200.0; // Maximum height to prevent overflow
+    final double finalHeight = dynamicHeight.clamp(minHeight, maxHeight);
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: offset.dx + 16, // Align with the left padding of the TextField
+        top: topPosition, // Position directly below the search bar
+        width: size.width - 24, // Adjust width to fit within the search bar's container
+        child: Material(
+          elevation: 4,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: finalHeight, // Set dynamic height
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.backgroundGray),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (query.isEmpty && _recentSearches.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Recent Searches',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textGray,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ...suggestionsToShow.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final suggestion = entry.value;
+                    return ListTile(
+                      title: Text(
+                        suggestion.length > 50 ? '${suggestion.substring(0, 47)}...' : suggestion,
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      trailing: query.isEmpty
+                          ? IconButton(
+                        icon: const Icon(Icons.close, size: 20, color: AppColors.textGray),
+                        onPressed: () {
+                          setState(() {
+                            _recentSearches.removeAt(index);
+                          });
+                          _showOverlay(); // Refresh the overlay
+                        },
+                      )
+                          : null,
+                      onTap: () {
+                        _searchController.text = suggestion;
+                        _removeOverlay();
+                        _performSearch(suggestion);
+                      },
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final overlay = Overlay.of(context);
+    overlay.insert(_overlayEntry!);
+  }
+
+  // Remove the suggestions overlay
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  // Perform the search and store the query in recent searches
+  void _performSearch(String query) {
+    if (query.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a search query'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // Add to recent searches (limit to 5)
+    setState(() {
+      _recentSearches.remove(query);
+      _recentSearches.insert(0, query);
+      if (_recentSearches.length > 5) {
+        _recentSearches = _recentSearches.take(5).toList();
+      }
+    });
+
+    // Filter courses based on the query (only by title)
+    final searchResults = _popularCourses.where((course) {
+      final queryLower = query.toLowerCase();
+      return course.title.toLowerCase().contains(queryLower);
+    }).toList();
+
+    // Navigate to the search results screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SearchResultsScreen(
+          searchResults: searchResults,
+          courseService: courseService,
+          bookmarkService: bookmarkService,
+          onBookmarkChanged: updateBookmarkStatus,
+        ),
+      ),
+    );
+
+    _removeOverlay();
   }
 
   @override
@@ -247,13 +529,12 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildSearchBar(),
               const CategoriesSection(),
               _buildPopularCourses(),
-              _buildTopInstructors(), // Appears first
-              // Conditionally render Continue Learning only if there are ongoing courses
+              _buildTopInstructors(),
               if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
                 Column(
                   children: [
                     _buildContinueLearning(),
-                    const SizedBox(height: 80), // Move the spacing inside the conditional
+                    const SizedBox(height: 80),
                   ],
                 ),
             ],
@@ -274,6 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(
             child: Container(
+              key: _searchContainerKey, // Attach GlobalKey to the Container
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.backgroundGray,
@@ -286,13 +568,39 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              child: const TextField(
-                decoration: InputDecoration(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                decoration: const InputDecoration(
                   hintText: 'Search courses...',
                   border: InputBorder.none,
                   icon: Icon(Icons.search, color: AppColors.textGray),
                 ),
+                onSubmitted: (value) {
+                  _performSearch(value);
+                },
               ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: GestureDetector(
+              onTap: () {
+                _performSearch(_searchController.text);
+              },
+              child: const Icon(Icons.search, color: Colors.white),
             ),
           ),
           const SizedBox(width: 12),
@@ -681,7 +989,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const PopularCoursesScreen(), // Placeholder
+                      builder: (context) => const PopularCoursesScreen(),
                     ),
                   );
                 },
@@ -697,7 +1005,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         SizedBox(
-          height: 150, // Increased height to accommodate name below image
+          height: 150,
           child: _topInstructors.isEmpty
               ? const Center(child: Text('No top instructors available'))
               : ListView.builder(
@@ -705,7 +1013,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: _topInstructors.length,
             itemBuilder: (context, index) {
-              final instructorName = _topInstructors[index]; // Access directly from list
+              final instructorName = _topInstructors[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Column(

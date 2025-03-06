@@ -9,7 +9,6 @@ import '../../../services/auth_service.dart';
 import '../../../services/course_service.dart';
 import 'package:path_provider/path_provider.dart';
 
-
 class CreateCourseView extends StatefulWidget {
   const CreateCourseView({Key? key}) : super(key: key);
 
@@ -131,8 +130,6 @@ class _CreateCourseViewState extends State<CreateCourseView> {
       setState(() => _error = 'No image selected.');
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
