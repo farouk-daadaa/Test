@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
+import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -322,7 +323,12 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         break;
       case 4:
-        Navigator.pushNamed(context, '/profile').then((_) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ProfileScreen(),
+          ),
+        ).then((_) {
           setState(() {
             _selectedIndex = 0;
           });

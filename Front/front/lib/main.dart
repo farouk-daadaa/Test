@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/screens/admin/AdminDashboardScreen.dart';
 import 'package:front/screens/homepage/course_details_screen.dart';
+import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/bookmarks_screen.dart';
 import 'package:front/screens/homepage/views/my_courses_screen.dart';
 import 'package:front/screens/homepage/views/ongoing_courses_screen.dart';
@@ -21,7 +22,7 @@ import 'package:front/services/admin_service.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:front/screens/homepage/HomeScreen.dart';
 import 'package:front/services/course_service.dart';
-import 'package:front/services/review_service.dart'; // Import ReviewService
+import 'package:front/services/review_service.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -63,6 +64,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'E-Learning App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -99,6 +101,7 @@ class MyApp extends StatelessWidget {
         '/popular-courses': (context) => const PopularCoursesScreen(),
         '/ongoing-courses': (context) => const OngoingCoursesScreen(),
         '/bookmarks': (context) => const BookmarksScreen(),
+        '/profile': (context) => const ProfileScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/course-details': (context) {
@@ -124,14 +127,12 @@ class MyApp extends StatelessWidget {
           }
         },
         '/edit-course': (context) => const EditCourseView(),
-        '/create-course': (context) => const CreateCourseView(), // Added this line
+        '/create-course': (context) => const CreateCourseView(),
       },
       onGenerateRoute: (settings) {
-        // Optional: Handle dynamic routes if needed
-        return null; // Remove or expand if you have dynamic routes beyond those in routes
+        return null;
       },
       onUnknownRoute: (settings) {
-        // Fallback route
         return MaterialPageRoute(
           builder: (context) => Scaffold(
             body: Center(

@@ -4,19 +4,22 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+// Global key for ScaffoldMessenger to use across the app
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
 class AuthService with ChangeNotifier {
   static const String baseUrl = 'http://192.168.1.13:8080';
-  final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   String? _token;
   String? _userRole;
   String? _instructorStatus;
-  String? _username; // Added username property
+  String? _username;
 
   // Getters
   String? get token => _token;
   String? get userRole => _userRole;
   String? get instructorStatus => _instructorStatus;
-  String? get username => _username; // Added username getter
+  String? get username => _username;
 
   Future<bool> _checkInternetConnection() async {
     var connectivityResult = await (Connectivity().checkConnectivity());
@@ -37,7 +40,8 @@ class AuthService with ChangeNotifier {
     _token = await _secureStorage.read(key: 'auth_token');
     _userRole = await _secureStorage.read(key: 'user_role');
     _instructorStatus = await _secureStorage.read(key: 'instructor_status');
-    _username = await _secureStorage.read(key: 'user_name'); // Load username
+    _username = await _secureStorage.read(key: 'user_name');
+    print('Loaded token: $_token, userRole: $_userRole, instructorStatus: $_instructorStatus, username: $_username');
     notifyListeners();
   }
 
@@ -70,7 +74,6 @@ class AuthService with ChangeNotifier {
                 await _secureStorage.write(key: 'instructor_status', value: _instructorStatus);
               }
 
-              // Store username if available
               if (userData.containsKey('username')) {
                 _username = userData['username'].toString();
                 await _secureStorage.write(key: 'user_name', value: _username);
@@ -124,7 +127,7 @@ class AuthService with ChangeNotifier {
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        return; // Success
+        return;
       } else {
         final errorBody = json.decode(response.body);
         throw Exception(errorBody['message'] ?? 'Registration failed');
@@ -198,37 +201,93 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> logout(BuildContext context) async {
-    bool confirmLogout = await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to log out?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: const Text('Yes'),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    ) ?? false;
+    // Ensure only one dialog is shown by checking if a dialog is already active
+    bool isDialogActive = false;
+    if (Navigator.of(context).canPop()) {
+      isDialogActive = true;
+    }
 
-    if (confirmLogout) {
-      _token = null;
-      _userRole = null;
-      _instructorStatus = null;
-      _username = null; // Clear username
-      await _secureStorage.delete(key: 'auth_token');
-      await _secureStorage.delete(key: 'user_role');
-      await _secureStorage.delete(key: 'instructor_status');
-      await _secureStorage.delete(key: 'user_name'); // Delete stored username
-      notifyListeners();
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
+    if (!isDialogActive) {
+      try {
+        bool confirmLogout = await showDialog(
+          context: context,
+          barrierDismissible: false, // Prevent multiple dialogs
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Confirm Logout'),
+              content: const Text('Are you sure you want to log out?'),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('Cancel'),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+                TextButton(
+                  child: const Text('Yes'),
+                  onPressed: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            );
+          },
+        ) ?? false;
+
+        if (confirmLogout) {
+          print('Clearing authentication state...');
+          _token = null;
+          _userRole = null;
+          _instructorStatus = null;
+          _username = null;
+          await _secureStorage.delete(key: 'auth_token');
+          await _secureStorage.delete(key: 'user_role');
+          await _secureStorage.delete(key: 'instructor_status');
+          await _secureStorage.delete(key: 'user_name');
+          notifyListeners(); // Notify listeners to update the app state
+          print('Navigating to login...');
+          if (Navigator.of(context).mounted) {
+            Navigator.pushNamedAndRemoveUntil(context, '/login', (Route<dynamic> route) => false);
+          } else {
+            print('Navigator is not mounted, forcing navigation');
+            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
+          }
+        }
+      } catch (e) {
+        print('Logout error: $e');
+        if (Navigator.of(context).mounted) {
+          scaffoldMessengerKey.currentState?.showSnackBar(
+            SnackBar(
+              content: Text('Logout failed: $e'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (Route<dynamic> route) => false);
+        }
+      }
+    } else {
+      print('Dialog already active, skipping logout prompt');
+    }
+  }
+
+  Future<dynamic> deleteAccount(String username) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/api/auth/delete/$username'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+        return responseData['message'] as String; // Extract the message field
+      } else {
+        throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to delete account');
+      }
+    } catch (e) {
+      throw Exception('Error deleting account: $e');
     }
   }
 
@@ -256,7 +315,7 @@ class AuthService with ChangeNotifier {
     if (token == null) return null;
 
     final response = await http.get(
-      Uri.parse('http://192.168.1.13:8080/api/auth/user/id/$username'), // Updated endpoint
+      Uri.parse('$baseUrl/api/auth/user/id/$username'),
       headers: {'Authorization': 'Bearer $token'},
     );
 
@@ -269,4 +328,83 @@ class AuthService with ChangeNotifier {
     }
   }
 
+  // New method to fetch user details
+  Future<Map<String, dynamic>> getUser(String username) async {
+    try {
+      final token = await getToken();
+      if (token == null) throw Exception('No authentication token found');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/auth/user/$username'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to fetch user: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      await _handleNetworkError(e);
+      rethrow;
+    }
+  }
+
+  // New method to update user details
+  Future<Map<String, dynamic>> updateUser(String username, Map<String, dynamic> userData) async {
+    try {
+      final token = await getToken();
+      if (token == null) throw Exception('No authentication token found');
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/auth/update/$username'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(userData),
+      );
+
+      if (response.statusCode == 200) {
+        final updatedData = json.decode(response.body);
+        // Update local username if it changed
+        if (userData.containsKey('username') && userData['username'] != _username) {
+          _username = userData['username'].toString();
+          await _secureStorage.write(key: 'user_name', value: _username);
+          notifyListeners();
+        }
+        return updatedData;
+      } else {
+        throw Exception('Failed to update user: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      await _handleNetworkError(e);
+      rethrow;
+    }
+  }
+
+  Future<dynamic> updatePassword(String username, Map<String, String> passwordData) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/api/auth/update-password/$username'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+        body: jsonEncode(passwordData),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body) as Map<String, dynamic>;
+        return responseData['message'] as String; // Extract the message field
+      } else {
+        throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to update password');
+      }
+    } catch (e) {
+      throw Exception('Error updating password: $e');
+    }
+  }
 }

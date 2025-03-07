@@ -11,20 +11,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import project.dto.AuthResponseDTO;
-import project.dto.InstructorRegisterDto;
-import project.dto.LoginDto;
-import project.dto.RegisterDto;
+import project.dto.*;
 import project.models.*;
-import project.repository.RoleRepository;
-import project.repository.UserRepository;
+import project.repository.*;
 import project.security.JWTGenerator;
 
 import javax.annotation.PostConstruct;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import javax.transaction.Transactional;
+import java.util.*;
+
 import project.service.EmailService;
 import project.service.imageServiceImpl;
 
@@ -59,6 +54,26 @@ public class AuthController {
     @Autowired
     private imageServiceImpl imageService;
 
+
+
+    @Autowired
+    private ImageRepository imageRepository;
+
+    @Autowired
+    private BookmarkRepository bookmarkRepository;
+
+    @Autowired
+    private EnrollmentRepository enrollmentRepository;
+
+    @Autowired
+    private ReviewRepository reviewRepository;
+
+    @Autowired
+    private InstructorRepository instructorRepository;
+
+    @Autowired
+    private CourseRepository courseRepository;
+
     @PostConstruct
     public void createDefaultAdminAccount() {
         if (!userRepository.existsByUsername("admin")) {
@@ -73,10 +88,7 @@ public class AuthController {
             adminRole.setUserRoleName(UserRoleName.ADMIN);
             adminRole.setUserEntity(adminUser);
 
-            //---Access
-           // adminRole.setEventManagement(true);
-           // adminRole.setEventManagement(true);
-            //--------
+
 
             adminUser.setUserRole(adminRole);
 
@@ -218,17 +230,51 @@ public class AuthController {
         return ResponseEntity.ok(response);    }
 
 
-    @DeleteMapping("delete/{username}")
+    @Transactional
+    @DeleteMapping("/delete/{username}")
     public ResponseEntity<?> deleteUser(@PathVariable String username) {
-        // Recherche de l'utilisateur dans la base de données
-        Optional<UserEntity> userOptional = userRepository.findByUsername(username);
-        if (userOptional.isPresent()) {
-            // L'utilisateur existe, le supprimer de la base de données
-            userRepository.delete(userOptional.get());
-            return ResponseEntity.ok("User deleted successfully");
-        } else {
-            // L'utilisateur n'existe pas dans la base de données
-            return ResponseEntity.notFound().build();
+        try {
+            Optional<UserEntity> userOptional = userRepository.findByUsername(username);
+            if (!userOptional.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            UserEntity user = userOptional.get();
+            Long userId = user.getId();
+
+            imageRepository.deleteByUserEntityId(userId);
+
+            bookmarkRepository.deleteByUser(user);
+
+            enrollmentRepository.deleteByStudent(user);
+
+            reviewRepository.deleteByUser(user);
+
+            Optional<Instructor> instructorOptional = instructorRepository.findByUser(user);
+            if (instructorOptional.isPresent()) {
+                Instructor instructor = instructorOptional.get();
+                Long instructorId = instructor.getId();
+
+                List<Course> courses = courseRepository.findByInstructorId(instructorId);
+                for (Course course : courses) {
+                    // Delete enrollments for this course
+                    Optional<Enrollment> enrollmentOptional = enrollmentRepository.findByCourseAndStudent(course, user);
+                    if (enrollmentOptional.isPresent()) {
+                        enrollmentRepository.delete(enrollmentOptional.get());
+                    }
+                }
+
+                courseRepository.deleteByInstructorId(instructorId);
+
+            }
+
+            userRepository.delete(user);
+
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Account deleted successfully");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("Failed to delete account: " + e.getMessage());
         }
     }
     @GetMapping("/user/id/{username}")
@@ -243,4 +289,85 @@ public class AuthController {
         }
     }
 
+
+    @GetMapping("/user/{username}")
+    public ResponseEntity<UserDTO> getUserByUsername(@PathVariable String username) {
+        System.out.println("Fetching user details for username: " + username);
+        Optional<UserEntity> userOptional = userRepository.findByUsername(username);
+        if (userOptional.isPresent()) {
+            System.out.println("User found with ID: " + userOptional.get().getId());
+            try {
+                UserDTO userDTO = UserDTO.fromEntity(userOptional.get());
+                System.out.println("Successfully mapped to UserDTO: " + userDTO.getUsername());
+                return ResponseEntity.ok(userDTO);
+            } catch (Exception e) {
+                System.out.println("Error mapping to UserDTO: " + e.getMessage());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+            }
+        } else {
+            System.out.println("User not found for username: " + username);
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PutMapping("/update/{username}")
+    public ResponseEntity<?> updateUser(@PathVariable String username, @RequestBody UserDTO userDto) {
+        System.out.println("Updating user with username: " + username);
+        Optional<UserEntity> userOptional = userRepository.findByUsername(username);
+        if (!userOptional.isPresent()) {
+            System.out.println("User not found for username: " + username);
+            return ResponseEntity.notFound().build();
+        }
+
+        UserEntity user = userOptional.get();
+        System.out.println("Found user with ID: " + user.getId());
+
+        // Update fields if provided in the DTO
+        if (userDto.getFirstName() != null) user.setFirstName(userDto.getFirstName());
+        if (userDto.getLastName() != null) user.setLastName(userDto.getLastName());
+        if (userDto.getEmail() != null) {
+            if (!userDto.getEmail().equals(user.getEmail()) && userRepository.existsByEmail(userDto.getEmail())) {
+                return ResponseEntity.badRequest().body("Email is already registered!");
+            }
+            user.setEmail(userDto.getEmail());
+        }
+        if (userDto.getPhoneNumber() != null) user.setPhoneNumber(userDto.getPhoneNumber());
+        if (userDto.getUsername() != null) {
+            if (!userDto.getUsername().equals(user.getUsername()) && userRepository.existsByUsername(userDto.getUsername())) {
+                return ResponseEntity.badRequest().body("Username is already taken!");
+            }
+            user.setUsername(userDto.getUsername());
+        }
+
+        userRepository.save(user);
+        System.out.println("User updated successfully with username: " + user.getUsername());
+        return ResponseEntity.ok(UserDTO.fromEntity(user));
+    }
+
+    @PutMapping("/update-password/{username}")
+    public ResponseEntity<?> updatePassword(@PathVariable String username, @RequestBody Map<String, String> passwordData) {
+        Optional<UserEntity> userOptional = userRepository.findByUsername(username);
+        if (!userOptional.isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        UserEntity user = userOptional.get();
+        String currentPassword = passwordData.get("currentPassword");
+        String newPassword = passwordData.get("newPassword");
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            return ResponseEntity.badRequest().body("Current password is incorrect");
+        }
+
+        if (newPassword == null || newPassword.length() < 8) {
+            return ResponseEntity.badRequest().body("New password must be at least 8 characters");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Password updated successfully");
+        return ResponseEntity.ok(response);
+    }
 }

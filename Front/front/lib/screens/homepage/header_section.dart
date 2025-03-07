@@ -51,45 +51,11 @@ class HeaderSection extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.notifications_outlined, color: Colors.white),
                 onPressed: () {},
-
-              ),
-              IconButton(
-                icon: Icon(Icons.logout),
-                tooltip: 'Logout',
-                onPressed: () => _confirmLogout(context), // Call the confirmation dialog
               ),
             ],
           ),
         ],
       ),
     );
-  }
-  Future<void> _confirmLogout(BuildContext context) async {
-    final authService = Provider.of<AuthService>(context, listen: false);
-
-    // Show a confirmation dialog
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Logout'),
-        content: Text('Are you sure you want to logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false), // Cancel
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true), // Yes
-            child: Text('Yes'),
-          ),
-        ],
-      ),
-    );
-
-    // If the user confirms logout, proceed with the logout process
-    if (shouldLogout == true) {
-      await authService.logout(context);
-      Navigator.of(context).pushReplacementNamed('/login');
-    }
   }
 }
