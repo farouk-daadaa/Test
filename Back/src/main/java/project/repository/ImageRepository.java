@@ -10,4 +10,6 @@ public interface ImageRepository extends JpaRepository<Image,Long > {
 
 
     Optional<Image> findByUserEntityId(Long idUser);
+
+    void deleteByUserEntityId(Long userId);
 }

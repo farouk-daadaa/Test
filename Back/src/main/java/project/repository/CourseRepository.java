@@ -8,6 +8,6 @@ import java.util.List;
 public interface CourseRepository extends JpaRepository<Course, Long> {
 
     List<Course> findByInstructorId(Long instructorId);
-    // You can add custom query methods here if needed
+    void deleteByInstructorId(Long instructorId);
 }
 
