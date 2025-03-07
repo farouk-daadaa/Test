@@ -47,6 +47,7 @@ dependencies:
   shimmer: ^3.0.0
   collection: ^1.17.0
   shared_preferences: ^2.2.0
+  pinput: ^3.0.1
 
 
 

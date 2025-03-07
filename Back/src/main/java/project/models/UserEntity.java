@@ -2,6 +2,7 @@ package project.models;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 import javax.persistence.*;
@@ -54,4 +55,19 @@ public class UserEntity {
     @OneToMany(mappedBy = "student")
     @JsonIgnoreProperties("student")
     private List<Enrollment> enrollments = new ArrayList<>();
+
+
+    @Column(name = "two_factor_enabled")
+    @JsonProperty("twoFactorEnabled")
+    private boolean twoFactorEnabled = false; // New field for 2FA status
+
+    @Column(name = "two_factor_code")
+    @JsonIgnore
+    private String twoFactorCode; // Temporary storage for 2FA code
+
+    @Column(name = "two_factor_code_expiry")
+    @JsonIgnore
+    private Date twoFactorCodeExpiry; // Expiry time for the 2FA code
+
+
 }

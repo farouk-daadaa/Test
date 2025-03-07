@@ -258,6 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final response = await authService.login(
           _usernameController.text,
           _passwordController.text,
+          context, // Pass the context here
         );
 
         if (response.containsKey('accessToken')) {

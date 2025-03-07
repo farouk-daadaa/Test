@@ -11,6 +11,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+
 import project.dto.*;
 import project.models.*;
 import project.repository.*;
@@ -23,24 +24,20 @@ import java.util.*;
 import project.service.EmailService;
 import project.service.imageServiceImpl;
 
-
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "*", allowedHeaders = "*")
-
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
-
     private final PasswordEncoder passwordEncoder;
     private final JWTGenerator jwtGenerator;
     private final RoleRepository roleRepository;
 
     @Autowired
     public AuthController(AuthenticationManager authenticationManager, UserRepository userRepository,
-                          RoleRepository roleRepository, PasswordEncoder passwordEncoder, JWTGenerator jwtGenerator
-                          ) {
+                          RoleRepository roleRepository, PasswordEncoder passwordEncoder, JWTGenerator jwtGenerator) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -54,23 +51,16 @@ public class AuthController {
     @Autowired
     private imageServiceImpl imageService;
 
-
-
     @Autowired
     private ImageRepository imageRepository;
-
     @Autowired
     private BookmarkRepository bookmarkRepository;
-
     @Autowired
     private EnrollmentRepository enrollmentRepository;
-
     @Autowired
     private ReviewRepository reviewRepository;
-
     @Autowired
     private InstructorRepository instructorRepository;
-
     @Autowired
     private CourseRepository courseRepository;
 
@@ -80,18 +70,14 @@ public class AuthController {
             UserEntity adminUser = new UserEntity();
             adminUser.setUsername("admin");
             adminUser.setEmail("admin@bridge.com");
-            adminUser.setPassword(passwordEncoder.encode("admin")); // You can change the default password
+            adminUser.setPassword(passwordEncoder.encode("admin")); // Default password
             adminUser.setFirstName("Admin");
             adminUser.setLastName("Bridge");
             adminUser.setCreationDate(new Date());
             UserRole adminRole = new UserRole();
             adminRole.setUserRoleName(UserRoleName.ADMIN);
             adminRole.setUserEntity(adminUser);
-
-
-
             adminUser.setUserRole(adminRole);
-
             userRepository.save(adminUser);
         }
     }
@@ -102,7 +88,6 @@ public class AuthController {
             if (token.startsWith("Bearer ")) {
                 token = token.substring(7); // Remove "Bearer " prefix
             }
-
             boolean isValid = jwtGenerator.validateToken(token);
             return ResponseEntity.ok(isValid);
         } catch (Exception e) {
@@ -110,9 +95,9 @@ public class AuthController {
         }
     }
 
-
     @PostMapping("login")
     public ResponseEntity<?> login(@RequestBody LoginDto loginDto) {
+        System.out.println("Attempting login for username: " + loginDto.getUsername() + ", password: " + loginDto.getPassword());
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
@@ -120,7 +105,7 @@ public class AuthController {
                             loginDto.getPassword()
                     )
             );
-
+            System.out.println("Authentication successful for username: " + loginDto.getUsername());
             SecurityContextHolder.getContext().setAuthentication(authentication);
             UserDetails userDetails = (UserDetails) authentication.getPrincipal();
             String token = jwtGenerator.generateToken(authentication);
@@ -129,25 +114,23 @@ public class AuthController {
             if (userOptional.isPresent()) {
                 UserEntity user = userOptional.get();
                 AuthResponseDTO authResponseDTO = new AuthResponseDTO(token, user);
+                System.out.println("Login successful, returning token: " + token);
                 return new ResponseEntity<>(authResponseDTO, HttpStatus.OK);
             } else {
+                System.out.println("User not found in database for username: " + userDetails.getUsername());
                 return new ResponseEntity<>("User not found", HttpStatus.NOT_FOUND);
             }
-
         } catch (AuthenticationException e) {
+            System.out.println("Authentication failed for username: " + loginDto.getUsername() + ". Error: " + e.getMessage());
             return new ResponseEntity<>("Invalid username or password", HttpStatus.UNAUTHORIZED);
         }
     }
-
-
 
     @PostMapping("register")
     public ResponseEntity<?> register(@RequestBody RegisterDto registerDto) {
         if (userRepository.existsByUsername(registerDto.getUsername())) {
             return ResponseEntity.badRequest().body("Username is taken!");
         }
-
-        // Check if the email is already registered
         if (userRepository.existsByEmail(registerDto.getEmail())) {
             return ResponseEntity.badRequest().body("Email is already registered!");
         }
@@ -157,38 +140,27 @@ public class AuthController {
         user.setLastName(registerDto.getLastName());
         user.setUsername(registerDto.getUsername());
         user.setEmail(registerDto.getEmail());
-
         user.setPassword(passwordEncoder.encode(registerDto.getPassword()));
         user.setPhoneNumber(registerDto.getPhoneNumber());
         user.setGender(registerDto.getGender());
-
-        // Set creationDate to the current date
         user.setCreationDate(new Date());
-
-
 
         UserRole defaultRole = new UserRole();
         defaultRole.setUserRoleName(UserRoleName.USER);
         defaultRole.setUserEntity(user);
-
-        //defaultRole.setUserManagement(true);
-        //defaultRole.setEventManagement(false);
         user.setUserRole(defaultRole);
 
-
         userRepository.save(user);
-
         imageService.createDefaultImage(user);
-
 
         return ResponseEntity.ok(user);
     }
+
     @PostMapping("/register/instructor")
     public ResponseEntity<?> registerInstructor(@RequestBody InstructorRegisterDto registerDto) {
         if (userRepository.existsByUsername(registerDto.getUsername())) {
             return ResponseEntity.badRequest().body("Username is taken!");
         }
-
         if (userRepository.existsByEmail(registerDto.getEmail())) {
             return ResponseEntity.badRequest().body("Email is already registered!");
         }
@@ -206,7 +178,6 @@ public class AuthController {
         UserRole instructorRole = new UserRole();
         instructorRole.setUserRoleName(UserRoleName.INSTRUCTOR);
         instructorRole.setUserEntity(user);
-
         user.setUserRole(instructorRole);
 
         Instructor instructor = new Instructor();
@@ -215,20 +186,16 @@ public class AuthController {
         instructor.setCv(registerDto.getCv());
         instructor.setLinkedinLink(registerDto.getLinkedinLink());
         instructor.setStatus(InstructorStatus.PENDING);
-
         user.setInstructor(instructor);
 
         userRepository.save(user);
-
         imageService.createDefaultImage(user);
-
-        // Send confirmation email
         emailService.sendInstructorSignUpEmail(user.getEmail());
 
         Map<String, String> response = new HashMap<>();
         response.put("message", "Instructor registered successfully. Waiting for admin approval.");
-        return ResponseEntity.ok(response);    }
-
+        return ResponseEntity.ok(response);
+    }
 
     @Transactional
     @DeleteMapping("/delete/{username}")
@@ -243,29 +210,22 @@ public class AuthController {
             Long userId = user.getId();
 
             imageRepository.deleteByUserEntityId(userId);
-
             bookmarkRepository.deleteByUser(user);
-
             enrollmentRepository.deleteByStudent(user);
-
             reviewRepository.deleteByUser(user);
 
             Optional<Instructor> instructorOptional = instructorRepository.findByUser(user);
             if (instructorOptional.isPresent()) {
                 Instructor instructor = instructorOptional.get();
                 Long instructorId = instructor.getId();
-
                 List<Course> courses = courseRepository.findByInstructorId(instructorId);
                 for (Course course : courses) {
-                    // Delete enrollments for this course
                     Optional<Enrollment> enrollmentOptional = enrollmentRepository.findByCourseAndStudent(course, user);
                     if (enrollmentOptional.isPresent()) {
                         enrollmentRepository.delete(enrollmentOptional.get());
                     }
                 }
-
                 courseRepository.deleteByInstructorId(instructorId);
-
             }
 
             userRepository.delete(user);
@@ -277,6 +237,7 @@ public class AuthController {
             return ResponseEntity.status(500).body("Failed to delete account: " + e.getMessage());
         }
     }
+
     @GetMapping("/user/id/{username}")
     public ResponseEntity<Map<String, Integer>> getUserIdByUsername(@PathVariable String username) {
         Optional<UserEntity> userOptional = userRepository.findByUsername(username);
@@ -288,7 +249,6 @@ public class AuthController {
             return ResponseEntity.notFound().build();
         }
     }
-
 
     @GetMapping("/user/{username}")
     public ResponseEntity<UserDTO> getUserByUsername(@PathVariable String username) {
@@ -322,7 +282,6 @@ public class AuthController {
         UserEntity user = userOptional.get();
         System.out.println("Found user with ID: " + user.getId());
 
-        // Update fields if provided in the DTO
         if (userDto.getFirstName() != null) user.setFirstName(userDto.getFirstName());
         if (userDto.getLastName() != null) user.setLastName(userDto.getLastName());
         if (userDto.getEmail() != null) {
@@ -358,7 +317,6 @@ public class AuthController {
         if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
             return ResponseEntity.badRequest().body("Current password is incorrect");
         }
-
         if (newPassword == null || newPassword.length() < 8) {
             return ResponseEntity.badRequest().body("New password must be at least 8 characters");
         }

@@ -23,6 +23,7 @@ public class UserDTO {
     private Date creationDate;
     private InstructorDTO instructor;
     private ImageDTO image;
+    private boolean twoFactorEnabled; // Add this field
 
     public static UserDTO fromEntity(UserEntity user) {
         UserDTO dto = new UserDTO();
@@ -35,6 +36,7 @@ public class UserDTO {
         dto.setGender(user.getGender());
         dto.setRole(user.getUserRole().getUserRoleName());
         dto.setCreationDate(user.getCreationDate());
+        dto.setTwoFactorEnabled(user.isTwoFactorEnabled());
 
         if (user.getUserImage() != null) {
             dto.setImage(ImageDTO.fromEntity(user.getUserImage()));
