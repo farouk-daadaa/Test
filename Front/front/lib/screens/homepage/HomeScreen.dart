@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,16 +8,17 @@ import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
 import '../../services/image_service.dart';
+import '../../services/admin_service.dart';
 import 'bottom_nav_bar.dart';
-import 'categories_section.dart';
+import 'categories_section.dart'; // Use the standalone CategoriesSection
 import 'course_card.dart';
 import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
 import 'views/popular_courses_screen.dart';
-import 'filter_screen.dart'; // Import the new filter screen
+import 'filter_screen.dart';
 import 'package:collection/collection.dart';
 
-// Search Results Screen
+// SearchResultsScreen class (kept inside HomeScreen file as per your setup)
 class SearchResultsScreen extends StatelessWidget {
   final List<CourseDTO> searchResults;
   final CourseService courseService;
@@ -116,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CourseDTO> _featuredCourses = [];
   List<String> _topInstructors = [];
   Map<String, Uint8List?> _instructorImages = {};
+  List<Map<String, dynamic>> _categories = []; // Added to store categories
 
   // Search-related variables
   final TextEditingController _searchController = TextEditingController();
@@ -123,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
   OverlayEntry? _overlayEntry;
   List<String> _recentSearches = [];
   List<String> _suggestions = [];
-  final GlobalKey _searchContainerKey = GlobalKey(); // GlobalKey for search bar
+  final GlobalKey _searchContainerKey = GlobalKey();
 
   @override
   void initState() {
@@ -154,16 +155,15 @@ class _HomeScreenState extends State<HomeScreen> {
       await _fetchPopularCourses(token);
       await _fetchFeaturedCourses(token);
       await _fetchTopInstructors(token, context);
+      await _fetchCategories(token); // Fetch categories
     }
   }
 
   Future<void> _fetchEnrolledCourses(String token) async {
     enrollmentService.setToken(token);
     courseService.setToken(token);
-
     final enrollments = await enrollmentService.getEnrolledCourses();
     final courses = await courseService.getAllCourses();
-
     setState(() {
       _enrolledCourses = enrollments.map((enrollment) {
         final course = courses.firstWhere(
@@ -191,15 +191,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchPopularCourses(String token) async {
     courseService.setToken(token);
     bookmarkService.setToken(token);
-
     final courses = await courseService.getAllCourses();
     final bookmarks = await bookmarkService.getBookmarkedCourses();
-
     final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
     for (final course in courses) {
       course.isBookmarked = bookmarkedIds.contains(course.id);
     }
-
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
     setState(() {
       _popularCourses = courses;
@@ -221,7 +218,6 @@ class _HomeScreenState extends State<HomeScreen> {
         instructorRatings.putIfAbsent(course.instructorName!, () => []).add(course.rating!);
       }
     }
-
     final topInstructors = instructorRatings.entries
         .map((entry) => MapEntry(entry.key, entry.value.reduce((a, b) => a + b) / entry.value.length))
         .where((entry) => entry.value > 0)
@@ -229,11 +225,9 @@ class _HomeScreenState extends State<HomeScreen> {
         .take(5)
         .map((entry) => entry.key)
         .toList();
-
     setState(() {
       _topInstructors = topInstructors;
     });
-
     for (var instructorName in _topInstructors) {
       await _fetchInstructorImage(instructorName, context, token);
     }
@@ -256,6 +250,14 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       print('No ID found for instructor: $instructorName');
     }
+  }
+
+  Future<void> _fetchCategories(String token) async {
+    final adminService = Provider.of<AdminService>(context, listen: false);
+    final categories = await adminService.getAllCategories();
+    setState(() {
+      _categories = categories;
+    });
   }
 
   void updateEnrollment(EnrollmentDTO updatedEnrollment) {
@@ -290,7 +292,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedIndex = index;
     });
     switch (index) {
-      case 1: // My Courses
+      case 1:
         Navigator.pushNamed(
           context,
           '/my-courses',
@@ -305,21 +307,21 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         });
         break;
-      case 2: // Bookmarks
+      case 2:
         Navigator.pushNamed(context, '/bookmarks').then((_) {
           setState(() {
             _selectedIndex = 0;
           });
         });
         break;
-      case 3: // Chat
+      case 3:
         Navigator.pushNamed(context, '/chat').then((_) {
           setState(() {
             _selectedIndex = 0;
           });
         });
         break;
-      case 4: // Profile
+      case 4:
         Navigator.pushNamed(context, '/profile').then((_) {
           setState(() {
             _selectedIndex = 0;
@@ -329,7 +331,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Handle search focus changes to show/hide suggestions
   void _onSearchFocusChanged() {
     if (_searchFocusNode.hasFocus) {
       _showOverlay();
@@ -338,7 +339,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Update suggestions as the user types (only match course titles)
   void _onSearchTextChanged() {
     final query = _searchController.text.toLowerCase();
     if (query.isEmpty) {
@@ -346,7 +346,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _suggestions = [];
       });
     } else {
-      // Generate suggestions based on course titles only
       final uniqueSuggestions = <String>{};
       for (final course in _popularCourses) {
         if (course.title.toLowerCase().contains(query)) {
@@ -363,49 +362,37 @@ class _HomeScreenState extends State<HomeScreen> {
     _showOverlay();
   }
 
-  // Show the suggestions overlay below the search bar
   void _showOverlay() {
     _removeOverlay();
     final query = _searchController.text;
-
     final suggestionsToShow = query.isEmpty ? _recentSearches : _suggestions;
-
     if (suggestionsToShow.isEmpty && query.isEmpty && _recentSearches.isEmpty) return;
-
-    // Use the GlobalKey to get the search bar's RenderBox
     final RenderBox? renderBox = _searchContainerKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) {
       print('Search bar render box not found');
       return;
     }
-
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
-
-    // Position the overlay just below the search bar
-    final topPosition = offset.dy + size.height;
-
-    // Calculate dynamic height based on number of suggestions
-    const double listTileHeight = 56.0; // Approximate height of a ListTile
-    const double headerHeight = 32.0; // Approximate height of "Recent Searches" header with padding
+    const double listTileHeight = 56.0;
+    const double headerHeight = 32.0;
     final int suggestionCount = suggestionsToShow.length;
     final double dynamicHeight = query.isEmpty && _recentSearches.isNotEmpty
         ? headerHeight + (suggestionCount * listTileHeight)
         : suggestionCount * listTileHeight;
-    const double minHeight = listTileHeight; // Minimum height for one suggestion
-    const double maxHeight = 200.0; // Maximum height to prevent overflow
+    const double minHeight = listTileHeight;
+    const double maxHeight = 200.0;
     final double finalHeight = dynamicHeight.clamp(minHeight, maxHeight);
-
     _overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
-        left: offset.dx + 16, // Align with the left padding of the TextField
-        top: topPosition, // Position directly below the search bar
-        width: size.width - 24, // Adjust width to fit within the search bar's container
+        left: offset.dx + 16,
+        top: offset.dy + size.height,
+        width: size.width - 24,
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            height: finalHeight, // Set dynamic height
+            height: finalHeight,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
@@ -447,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           setState(() {
                             _recentSearches.removeAt(index);
                           });
-                          _showOverlay(); // Refresh the overlay
+                          _showOverlay();
                         },
                       )
                           : null,
@@ -465,18 +452,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-
-    final overlay = Overlay.of(context);
-    overlay.insert(_overlayEntry!);
+    Overlay.of(context).insert(_overlayEntry!);
   }
 
-  // Remove the suggestions overlay
   void _removeOverlay() {
     _overlayEntry?.remove();
     _overlayEntry = null;
   }
 
-  // Perform the search and store the query in recent searches
   void _performSearch(String query) {
     if (query.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -487,8 +470,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-
-    // Add to recent searches (limit to 5)
     setState(() {
       _recentSearches.remove(query);
       _recentSearches.insert(0, query);
@@ -496,13 +477,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _recentSearches = _recentSearches.take(5).toList();
       }
     });
-
-    // Filter courses based on the query (only by title) and navigate
     final searchResults = _popularCourses.where((course) {
       final queryLower = query.toLowerCase();
       return course.title.toLowerCase().contains(queryLower);
     }).toList();
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -514,11 +492,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-
     _removeOverlay();
   }
 
-  // Inside _HomeScreenState class
   void _openFilterScreen() {
     if (_popularCourses.isEmpty) {
       print('Warning: _popularCourses is empty, filtering may not work');
@@ -529,7 +505,6 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => FilterScreen(
           allCourses: _popularCourses,
           onApply: (filteredCourses) {
-            // Navigate to SearchResultsScreen with the filtered courses
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -547,6 +522,26 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openCategoryScreen(String categoryId, String categoryName) {
+    if (_popularCourses.isEmpty) {
+      print('Warning: _popularCourses is empty, filtering may not work');
+    }
+    final filteredCourses = _popularCourses.where((course) {
+      return course.categoryId.toString() == categoryId;
+    }).toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SearchResultsScreen(
+          searchResults: filteredCourses,
+          courseService: courseService,
+          bookmarkService: bookmarkService,
+          onBookmarkChanged: updateBookmarkStatus,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -557,7 +552,10 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const HeaderSection(),
               _buildSearchBar(),
-              const CategoriesSection(),
+              CategoriesSection(
+                allCourses: _popularCourses, // Pass _popularCourses
+                onCategorySelected: _openCategoryScreen, // Pass the callback
+              ),
               _buildPopularCourses(),
               _buildTopInstructors(),
               if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
@@ -585,7 +583,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(
             child: Container(
-              key: _searchContainerKey, // Attach GlobalKey to the Container
+              key: _searchContainerKey,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.backgroundGray,
@@ -648,7 +646,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             child: GestureDetector(
-              onTap: _openFilterScreen, // Open filter screen on tap
+              onTap: _openFilterScreen,
               child: const Icon(Icons.tune, color: Colors.white),
             ),
           ),
@@ -706,7 +704,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               }
-
               if (snapshot.hasError) {
                 return Center(
                   child: Column(
@@ -725,7 +722,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               }
-
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Center(
                   child: Column(
@@ -743,7 +739,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 );
               }
-
               _popularCourses = snapshot.data!;
               return _buildCourseList();
             },
@@ -981,22 +976,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<List<CourseDTO>> _getCoursesWithToken() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
-
     if (token == null) {
       throw Exception('User not authenticated');
     }
-
     courseService.setToken(token);
     bookmarkService.setToken(token);
-
     final courses = await courseService.getAllCourses();
     final bookmarks = await bookmarkService.getBookmarkedCourses();
-
     final bookmarkedIds = bookmarks.map((b) => b.id).toSet();
     for (final course in courses) {
       course.isBookmarked = bookmarkedIds.contains(course.id);
     }
-
     courses.sort((a, b) => (b.rating ?? 0.0).compareTo(a.rating ?? 0.0));
     return courses;
   }
@@ -1091,5 +1081,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  IconData _getCategoryIcon(String categoryName) {
+    return Icons.category;
   }
 }

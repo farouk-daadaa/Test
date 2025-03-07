@@ -2,10 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/admin_service.dart';
+import '../../services/course_service.dart';
 import 'views/all_categories_screen.dart';
 
+typedef CategorySelectedCallback = void Function(String categoryId, String categoryName);
+
 class CategoriesSection extends StatelessWidget {
-  const CategoriesSection({super.key});
+  final List<CourseDTO> allCourses; // Added to receive courses from HomeScreen
+  final CategorySelectedCallback onCategorySelected; // Callback from HomeScreen
+
+  const CategoriesSection({
+    super.key,
+    required this.allCourses,
+    required this.onCategorySelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +52,14 @@ class CategoriesSection extends StatelessWidget {
                   ),
                   TextButton(
                     onPressed: () {
-                      // Navigate to the "See All" screen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => AllCategoriesScreen(categories: categories),
+                          builder: (context) => AllCategoriesScreen(
+                            categories: categories,
+                            allCourses: allCourses, // Pass the received allCourses
+                            onCategorySelected: onCategorySelected, // Pass the callback
+                          ),
                         ),
                       );
                     },
@@ -71,32 +84,37 @@ class CategoriesSection extends StatelessWidget {
                   final category = categories[index];
                   final imageUrl = AdminService.getCategoryImageUrl(category['imageUrl']);
 
-                  return Column(
-                    children: [
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                          image: DecorationImage(
-                            image: NetworkImage(imageUrl),
-                            fit: BoxFit.cover,
+                  return GestureDetector(
+                    onTap: () {
+                      onCategorySelected(category['id']?.toString() ?? '-1', category['name'] ?? 'Unknown');
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            image: DecorationImage(
+                              image: NetworkImage(imageUrl),
+                              fit: BoxFit.cover,
+                            ),
                           ),
+                          child: category['imageUrl'] == null
+                              ? Icon(
+                            _getCategoryIcon(category['name']),
+                            color: AppColors.primary,
+                          )
+                              : null,
                         ),
-                        child: category['imageUrl'] == null
-                            ? Icon(
-                          _getCategoryIcon(category['name']),
-                          color: AppColors.primary,
-                        )
-                            : null,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        category['name'],
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          category['name'],
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
@@ -107,9 +125,7 @@ class CategoriesSection extends StatelessWidget {
     );
   }
 
-  // Helper method to map category names to icons
   IconData _getCategoryIcon(String categoryName) {
     return Icons.category;
   }
-
 }
