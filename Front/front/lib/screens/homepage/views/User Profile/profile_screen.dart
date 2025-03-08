@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:front/screens/homepage/views/User%20Profile/change_password_screen.dart';
+import 'package:front/screens/homepage/views/User%20Profile/privacy_policy_screen.dart';
 import 'package:front/screens/homepage/views/User%20Profile/settings_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,8 @@ import '../../../../services/image_service.dart';
 import '../../bottom_nav_bar.dart';
 import 'edit_profile_screen.dart';
 import 'dart:io';
+
+import 'help_center_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -457,17 +460,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildDivider(),
           _buildMenuItem(
             icon: Icons.help_outline,
-            title: 'Help Center',
+            title: 'Contact Us',
             subtitle: 'Get support and answers to your questions',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Help center feature coming soon!'),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HelpCenterScreen()),
               );
             },
           ),
@@ -477,14 +475,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'Privacy Policy',
             subtitle: 'Learn how we protect your data',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Privacy policy feature coming soon!'),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PrivacyPolicyScreen()),
               );
             },
           ),
