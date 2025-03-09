@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter/foundation.dart'; // For compute
 import '../../../services/admin_service.dart';
 import 'dart:typed_data';
 
@@ -14,10 +14,11 @@ class _StudentsViewState extends State<StudentsView> {
   final AdminService _adminService = AdminService();
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _filteredStudents = [];
+  final Map<int, Uint8List?> _imageCache = {}; // Cache for images
   bool _isLoading = false;
   String? _error;
   String _searchQuery = '';
-  String _sortBy = 'name'; // 'name', 'courses'
+  String _sortBy = 'name';
   bool _sortAscending = true;
 
   @override
@@ -39,7 +40,8 @@ class _StudentsViewState extends State<StudentsView> {
         _filterAndSortStudents();
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      print('Error loading students: $e');
+      setState(() => _error = 'Failed to load students. Please try again.');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -53,36 +55,74 @@ class _StudentsViewState extends State<StudentsView> {
       return name.contains(searchLower) || email.contains(searchLower);
     }).toList();
 
-    _filteredStudents.sort((a, b) {
-      switch (_sortBy) {
+    if (_filteredStudents.length > 50) {
+      compute(_sortStudents, {
+        'students': _filteredStudents,
+        'sortBy': _sortBy,
+        'sortAscending': _sortAscending,
+      }).then((sorted) {
+        if (mounted) {
+          setState(() => _filteredStudents = sorted);
+        }
+      });
+    } else {
+      _filteredStudents.sort((a, b) {
+        switch (_sortBy) {
+          case 'name':
+            final nameA = '${a['firstName'] ?? ''} ${a['lastName'] ?? ''}'.toLowerCase();
+            final nameB = '${b['firstName'] ?? ''} ${b['lastName'] ?? ''}'.toLowerCase();
+            return _sortAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+          case 'courses':
+            final coursesA = (a['courses'] as List?)?.length ?? 0;
+            final coursesB = (b['courses'] as List?)?.length ?? 0;
+            return _sortAscending ? coursesA.compareTo(coursesB) : coursesB.compareTo(coursesA);
+          case 'creationDate':
+            DateTime? dateA = _parseDate(a['creationDate']);
+            DateTime? dateB = _parseDate(b['creationDate']);
+            dateA ??= DateTime.now();
+            dateB ??= DateTime.now();
+            return _sortAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
+          default:
+            return 0;
+        }
+      });
+      setState(() {});
+    }
+  }
+
+  static List<Map<String, dynamic>> _sortStudents(Map<String, dynamic> params) {
+    final students = params['students'] as List<Map<String, dynamic>>;
+    final sortBy = params['sortBy'] as String;
+    final sortAscending = params['sortAscending'] as bool;
+
+    students.sort((a, b) {
+      switch (sortBy) {
         case 'name':
           final nameA = '${a['firstName'] ?? ''} ${a['lastName'] ?? ''}'.toLowerCase();
           final nameB = '${b['firstName'] ?? ''} ${b['lastName'] ?? ''}'.toLowerCase();
-          return _sortAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+          return sortAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
         case 'courses':
           final coursesA = (a['courses'] as List?)?.length ?? 0;
           final coursesB = (b['courses'] as List?)?.length ?? 0;
-          return _sortAscending ? coursesA.compareTo(coursesB) : coursesB.compareTo(coursesA);
+          return sortAscending ? coursesA.compareTo(coursesB) : coursesB.compareTo(coursesA);
         case 'creationDate':
-          DateTime? dateA = _parseDate(a['CreationDate']);
-          DateTime? dateB = _parseDate(b['CreationDate']);
+          DateTime? dateA = _parseDate(a['creationDate']);
+          DateTime? dateB = _parseDate(b['creationDate']);
           dateA ??= DateTime.now();
           dateB ??= DateTime.now();
-          return _sortAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
+          return sortAscending ? dateA.compareTo(dateB) : dateB.compareTo(dateA);
         default:
           return 0;
       }
     });
+    return students;
   }
 
-  DateTime? _parseDate(dynamic dateValue) {
+  static DateTime? _parseDate(dynamic dateValue) {
     if (dateValue == null) return null;
     try {
-      if (dateValue is int) {
-        return DateTime.fromMillisecondsSinceEpoch(dateValue);
-      } else if (dateValue is String) {
-        return DateTime.parse(dateValue);
-      }
+      if (dateValue is int) return DateTime.fromMillisecondsSinceEpoch(dateValue);
+      if (dateValue is String) return DateTime.parse(dateValue);
     } catch (e) {
       print('Error parsing date: $e');
     }
@@ -115,11 +155,7 @@ class _StudentsViewState extends State<StudentsView> {
         SizedBox(width: 12),
         Text(
           'Students',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFDB2777),
-          ),
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFFDB2777)),
         ),
         Spacer(),
         _buildRefreshButton(),
@@ -132,8 +168,7 @@ class _StudentsViewState extends State<StudentsView> {
       icon: Icon(Icons.refresh, color: Color(0xFFDB2777)),
       tooltip: 'Refresh list',
       onPressed: _loadStudents,
-    ).animate(onPlay: (controller) => controller.repeat())
-        .shimmer(duration: 2.seconds, color: Color(0xFFDB2777).withOpacity(0.2));
+    );
   }
 
   Widget _buildSearchAndFilter() {
@@ -143,12 +178,7 @@ class _StudentsViewState extends State<StudentsView> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 5, offset: Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -223,10 +253,7 @@ class _StudentsViewState extends State<StudentsView> {
                 ),
                 SizedBox(width: 8),
                 IconButton(
-                  icon: Icon(
-                    _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                    color: Color(0xFFDB2777),
-                  ),
+                  icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.arrow_downward, color: Color(0xFFDB2777)),
                   onPressed: () {
                     setState(() {
                       _sortAscending = !_sortAscending;
@@ -246,70 +273,33 @@ class _StudentsViewState extends State<StudentsView> {
   Widget _buildStats() {
     final totalStudents = _students.length;
     final activeStudents = _students.where((s) => s['isActive'] == true).length;
-    final enrolledCourses = _students.fold<int>(
-        0, (sum, student) => sum + ((student['courses'] as List?)?.length ?? 0));
+    final enrolledCourses = _students.fold<int>(0, (sum, student) => sum + ((student['courses'] as List?)?.length ?? 0));
 
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), spreadRadius: 1, blurRadius: 5, offset: Offset(0, 2))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildStatCard(
-            icon: Icons.people,
-            label: 'Total Students',
-            value: totalStudents.toString(),
-          ),
-          _buildStatCard(
-            icon: Icons.person_outline,
-            label: 'Active Students',
-            value: activeStudents.toString(),
-          ),
-          _buildStatCard(
-            icon: Icons.book,
-            label: 'Total Enrollments',
-            value: enrolledCourses.toString(),
-          ),
+          _buildStatCard(icon: Icons.people, label: 'Total Students', value: totalStudents.toString()),
+          _buildStatCard(icon: Icons.person_outline, label: 'Active Students', value: activeStudents.toString()),
+          _buildStatCard(icon: Icons.book, label: 'Total Enrollments', value: enrolledCourses.toString()),
         ],
       ),
     );
   }
 
-  Widget _buildStatCard({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _buildStatCard({required IconData icon, required String label, required String value}) {
     return Column(
       children: [
         Icon(icon, color: Color(0xFFDB2777), size: 24),
         SizedBox(height: 8),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFDB2777),
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
-        ),
+        Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFDB2777))),
+        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
       ],
     );
   }
@@ -320,14 +310,9 @@ class _StudentsViewState extends State<StudentsView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
-            ),
+            CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777))),
             SizedBox(height: 16),
-            Text(
-              'Loading students...',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
+            Text('Loading students...', style: TextStyle(color: Colors.grey[600])),
           ],
         ),
       );
@@ -340,20 +325,13 @@ class _StudentsViewState extends State<StudentsView> {
           children: [
             Icon(Icons.error_outline, color: Colors.red, size: 48),
             SizedBox(height: 16),
-            Text(
-              _error!,
-              style: TextStyle(color: Colors.red),
-              textAlign: TextAlign.center,
-            ),
+            Text(_error!, style: TextStyle(color: Colors.red), textAlign: TextAlign.center),
             SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: _loadStudents,
               icon: Icon(Icons.refresh),
               label: Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFFDB2777),
-                foregroundColor: Colors.white,
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Color(0xFFDB2777), foregroundColor: Colors.white),
             ),
           ],
         ),
@@ -365,28 +343,12 @@ class _StudentsViewState extends State<StudentsView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.person_search,
-              size: 48,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.person_search, size: 48, color: Colors.grey[400]),
             SizedBox(height: 16),
-            Text(
-              'No students found',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-              ),
-            ),
+            Text('No students found', style: TextStyle(fontSize: 18, color: Colors.grey[600])),
             if (_searchQuery.isNotEmpty) ...[
               SizedBox(height: 8),
-              Text(
-                'Try adjusting your search',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[500],
-                ),
-              ),
+              Text('Try adjusting your search', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
             ],
           ],
         ),
@@ -397,92 +359,49 @@ class _StudentsViewState extends State<StudentsView> {
       onRefresh: _loadStudents,
       color: Color(0xFFDB2777),
       child: ListView.builder(
+        cacheExtent: 2000, // Increased for smoother scrolling
         itemCount: _filteredStudents.length,
-        itemBuilder: (context, index) {
-          final student = _filteredStudents[index];
-          return _buildStudentCard(student, index);
-        },
+        itemBuilder: (context, index) => _buildStudentCard(_filteredStudents[index]),
       ),
     );
   }
 
-  Widget _buildStudentCard(Map<String, dynamic> student, int index) {
+  Widget _buildStudentCard(Map<String, dynamic> student) {
     final courses = (student['courses'] as List?)?.length ?? 0;
     final isActive = student['isActive'] ?? false;
     final firstName = student['firstName'] ?? '';
     final lastName = student['lastName'] ?? '';
-    final name = '$firstName $lastName'.trim(); // Combine first and last name
+    final name = '$firstName $lastName'.trim();
     final email = student['email'] ?? 'No email';
+    final id = student['id'];
 
     return Card(
       elevation: 2,
       margin: EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Colors.grey.withOpacity(0.2),
-          width: 1,
-        ),
+        side: BorderSide(color: Colors.grey.withOpacity(0.2), width: 1),
       ),
       child: ListTile(
         contentPadding: EdgeInsets.all(16),
-        leading: FutureBuilder<Uint8List?>(
-          future: student['id'] != null
-              ? _adminService.getImageBytes(student['id'])
-              : Future.value(null),
-          builder: (context, snapshot) {
-            return CircleAvatar(
-              radius: 24,
-              backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
-              child: snapshot.connectionState == ConnectionState.waiting
-                  ? CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
-                strokeWidth: 2,
-              )
-                  : snapshot.hasData
-                  ? ClipOval(
-                child: Image.memory(
-                  snapshot.data!,
-                  fit: BoxFit.cover,
-                  width: 48,
-                  height: 48,
-                  errorBuilder: (context, error, stackTrace) {
-                    print('Error loading image: $error');
-                    return _buildFallbackAvatar(name);
-                  },
-                ),
-              )
-                  : _buildFallbackAvatar(name),
-            );
-          },
+        leading: CircleAvatar(
+          radius: 24,
+          backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
+          child: _buildStudentAvatar(id, name),
         ),
-        title: Text(
-          name,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+        title: Text(name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(height: 4),
-            Text(
-              email,
-              style: TextStyle(color: Colors.grey[600]),
-            ),
+            Text(email, style: TextStyle(color: Colors.grey[600])),
             SizedBox(height: 4),
             Row(
               children: [
                 Icon(Icons.book, size: 14, color: Colors.grey[500]),
                 SizedBox(width: 4),
-                Text(
-                  '$courses ${courses == 1 ? 'course' : 'courses'} enrolled',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                  ),
-                ),
+                Text('$courses ${courses == 1 ? 'course' : 'courses'} enrolled',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500])),
               ],
             ),
           ],
@@ -510,18 +429,65 @@ class _StudentsViewState extends State<StudentsView> {
           ],
         ),
       ),
-    ).animate(delay: Duration(milliseconds: 50 * index))
-        .fadeIn()
-        .slideX();
+    );
+  }
+
+  Widget _buildStudentAvatar(int? id, String name) {
+    if (id == null) return _buildFallbackAvatar(name);
+
+    if (_imageCache.containsKey(id)) {
+      return _imageCache[id] != null && _imageCache[id]!.isNotEmpty
+          ? ClipOval(child: Image.memory(_imageCache[id]!, fit: BoxFit.cover, width: 48, height: 48))
+          : _buildFallbackAvatar(name);
+    }
+
+    return FutureBuilder<Uint8List?>(
+      future: _adminService.getImageBytes(id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
+            strokeWidth: 2,
+          );
+        }
+        if (snapshot.hasError) {
+          print('Error loading image for student $id: ${snapshot.error}');
+          _imageCache[id] = null;
+          return _buildFallbackAvatar(name);
+        }
+        if (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty) {
+          _imageCache[id] = snapshot.data;
+          if (_imageCache.length > 50) {
+            _imageCache.remove(_imageCache.keys.first);
+          }
+          return ClipOval(
+            child: Image.memory(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              width: 48,
+              height: 48,
+              frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded) return child;
+                return AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
+                  duration: Duration(milliseconds: 200),
+                  child: child,
+                );
+              },
+            ),
+          );
+        }
+        print('No valid image data for student $id');
+        _imageCache[id] = null;
+        return _buildFallbackAvatar(name);
+      },
+    );
   }
 
   Widget _buildFallbackAvatar(String name) {
     return Text(
       name.isNotEmpty ? name[0].toUpperCase() : '?',
-      style: TextStyle(
-        color: Color(0xFFDB2777),
-        fontWeight: FontWeight.bold,
-      ),
+      style: TextStyle(color: Color(0xFFDB2777), fontWeight: FontWeight.bold),
     );
   }
 
@@ -539,21 +505,20 @@ class _StudentsViewState extends State<StudentsView> {
   void _showStudentDetails(Map<String, dynamic> student) {
     final firstName = student['firstName'] ?? '';
     final lastName = student['lastName'] ?? '';
-    final name = '$firstName $lastName'.trim(); // Combine first and last name
+    final name = '$firstName $lastName'.trim();
     final email = student['email'] ?? 'No email';
     final username = student['username'] ?? 'No username';
     final gender = student['gender'] ?? 'No gender';
     final phoneNumber = student['phoneNumber'] ?? 'No phone number';
-    final creationDate = _formatDate(student['CreationDate']);
+    final creationDate = _formatDate(student['creationDate']);
     final courses = (student['courses'] as List?)?.length ?? 0;
     final isActive = student['isActive'] ?? false;
+    final id = student['id'];
 
     showDialog(
       context: context,
       builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Container(
           padding: EdgeInsets.all(24),
           constraints: BoxConstraints(maxWidth: 400),
@@ -566,49 +531,14 @@ class _StudentsViewState extends State<StudentsView> {
                   CircleAvatar(
                     radius: 30,
                     backgroundColor: Color(0xFFDB2777).withOpacity(0.1),
-                    child: FutureBuilder<Uint8List?>(
-                      future: student['id'] != null
-                          ? _adminService.getImageBytes(student['id'])
-                          : Future.value(null),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)),
-                          );
-                        }
-                        if (snapshot.hasData) {
-                          return ClipOval(
-                            child: Image.memory(
-                              snapshot.data!,
-                              width: 60,
-                              height: 60,
-                              fit: BoxFit.cover,
-                            ),
-                          );
-                        }
-                        return Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: TextStyle(
-                            color: Color(0xFFDB2777),
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      },
-                    ),
+                    child: _buildStudentAvatar(id, name),
                   ),
                   SizedBox(width: 16),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text(name, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                         SizedBox(height: 4),
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -619,9 +549,7 @@ class _StudentsViewState extends State<StudentsView> {
                           child: Text(
                             isActive ? 'Active' : 'Inactive',
                             style: TextStyle(
-                              color: isActive ? Colors.green : Colors.grey,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                color: isActive ? Colors.green : Colors.grey, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -642,10 +570,7 @@ class _StudentsViewState extends State<StudentsView> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
-                      'Close',
-                      style: TextStyle(color: Color(0xFFDB2777)),
-                    ),
+                    child: Text('Close', style: TextStyle(color: Color(0xFFDB2777))),
                   ),
                 ],
               ),
@@ -659,16 +584,10 @@ class _StudentsViewState extends State<StudentsView> {
   String _formatDate(dynamic dateValue) {
     if (dateValue == null) return 'Unknown';
     try {
-      DateTime date;
-      if (dateValue is int) {
-        date = DateTime.fromMillisecondsSinceEpoch(dateValue);
-      } else if (dateValue is String) {
-        date = DateTime.parse(dateValue);
-      } else {
-        return 'Invalid date';
-      }
+      DateTime date = dateValue is int ? DateTime.fromMillisecondsSinceEpoch(dateValue) : DateTime.parse(dateValue);
       return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
     } catch (e) {
+      print('Error formatting date: $e');
       return 'Invalid date';
     }
   }
@@ -685,20 +604,9 @@ class _StudentsViewState extends State<StudentsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                ),
+                Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                 SizedBox(height: 4),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 14,
-                  ),
-                ),
+                Text(value, style: TextStyle(fontSize: 14)),
               ],
             ),
           ),
