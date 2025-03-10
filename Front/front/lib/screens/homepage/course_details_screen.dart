@@ -875,7 +875,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
       ),
     );
   }
-
   Widget _buildLessonsTab() {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -885,7 +884,7 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-            onTap: lesson.videoUrl != null
+            onTap: _isEnrolled && lesson.videoUrl != null
                 ? () async {
               await Navigator.push(
                 context,
@@ -900,7 +899,22 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 _markLessonCompleted(lesson.id!);
               }
             }
-                : null,
+                : () {
+              if (!_isEnrolled) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Please enroll in the course to access lessons'),
+                    backgroundColor: Colors.red,
+                    action: SnackBarAction(
+                      label: 'Enroll',
+                      textColor: Colors.white,
+                      onPressed: _enrollInCourse,
+                    ),
+                  ),
+                );
+              }
+            },
+            enabled: _isEnrolled, // Disables interaction if not enrolled
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -915,11 +929,21 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 ),
               ),
             ),
-            title: Text(lesson.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              lesson.title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: _isEnrolled ? null : Colors.grey, // Grey out text if not enrolled
+              ),
+            ),
             trailing: lesson.videoUrl != null
                 ? IconButton(
-              icon: const Icon(Icons.play_circle_outline),
-              onPressed: () async {
+              icon: Icon(
+                _isEnrolled ? Icons.play_circle_outline : Icons.lock,
+                color: _isEnrolled ? null : Colors.grey,
+              ),
+              onPressed: _isEnrolled
+                  ? () async {
                 await Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -932,6 +956,19 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen>
                 if (_isEnrolled && lesson.id != null) {
                   _markLessonCompleted(lesson.id!);
                 }
+              }
+                  : () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Please enroll in the course to access lessons'),
+                    backgroundColor: Colors.red,
+                    action: SnackBarAction(
+                      label: 'Enroll',
+                      textColor: Colors.white,
+                      onPressed: _enrollInCourse,
+                    ),
+                  ),
+                );
               },
             )
                 : null,
