@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
+import 'package:front/screens/homepage/views/all_instructors_screen.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -11,7 +12,7 @@ import '../../services/enrollment_service.dart';
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
 import 'bottom_nav_bar.dart';
-import 'categories_section.dart'; // Use the standalone CategoriesSection
+import 'categories_section.dart';
 import 'course_card.dart';
 import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
@@ -19,7 +20,7 @@ import 'views/popular_courses_screen.dart';
 import 'filter_screen.dart';
 import 'package:collection/collection.dart';
 
-// SearchResultsScreen class (kept inside HomeScreen file as per your setup)
+// SearchResultsScreen class (unchanged)
 class SearchResultsScreen extends StatelessWidget {
   final List<CourseDTO> searchResults;
   final CourseService courseService;
@@ -71,11 +72,11 @@ class SearchResultsScreen extends StatelessWidget {
                   'onEnrollmentChanged': () async {
                     final token = await Provider.of<AuthService>(context, listen: false).getToken();
                     if (token != null) {
-                      // Assuming there's a way to refresh enrolled courses in the parent
+                      // Refresh will handle this now
                     }
                   },
                   'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
-                    // Assuming there's a way to update enrollment in the parent
+                    // Refresh will handle this now
                   },
                 },
               );
@@ -117,9 +118,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CourseDTO> _featuredCourses = [];
   List<String> _topInstructors = [];
   Map<String, Uint8List?> _instructorImages = {};
-  List<Map<String, dynamic>> _categories = []; // Added to store categories
+  List<Map<String, dynamic>> _categories = [];
 
-  // Search-related variables
+  // Search-related variables (unchanged)
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   OverlayEntry? _overlayEntry;
@@ -152,12 +153,21 @@ class _HomeScreenState extends State<HomeScreen> {
       enrollmentService.setToken(token);
       imageService.setToken(token);
       _authService = authService;
-      await _fetchEnrolledCourses(token);
-      await _fetchPopularCourses(token);
-      await _fetchFeaturedCourses(token);
-      await _fetchTopInstructors(token, context);
-      await _fetchCategories(token); // Fetch categories
+      await _refreshAllData(token); // Initial load
     }
+  }
+
+  // New method to refresh all data
+  Future<void> _refreshAllData(String? token) async {
+    token ??= await _authService.getToken();
+    if (token == null) return;
+    await Future.wait([
+      _fetchEnrolledCourses(token),
+      _fetchPopularCourses(token),
+      _fetchFeaturedCourses(token),
+      _fetchTopInstructors(token, context),
+      _fetchCategories(token),
+    ]);
   }
 
   Future<void> _fetchEnrolledCourses(String token) async {
@@ -238,18 +248,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_instructorImages.containsKey(instructorName)) return;
     final instructorId = await _authService.getUserIdByUsername(instructorName);
     if (instructorId != null) {
-      print('Fetching image for $instructorName with ID: $instructorId');
       final imageBytes = await imageService.getUserImage(context, instructorId);
       if (imageBytes != null) {
-        print('Image fetched for $instructorName: ${imageBytes.length} bytes');
         setState(() {
           _instructorImages[instructorName] = imageBytes;
         });
-      } else {
-        print('No image bytes returned for $instructorName');
       }
-    } else {
-      print('No ID found for instructor: $instructorName');
     }
   }
 
@@ -552,26 +556,32 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const HeaderSection(),
-              _buildSearchBar(),
-              CategoriesSection(
-                allCourses: _popularCourses, // Pass _popularCourses
-                onCategorySelected: _openCategoryScreen, // Pass the callback
-              ),
-              _buildPopularCourses(),
-              _buildTopInstructors(),
-              if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
-                Column(
-                  children: [
-                    _buildContinueLearning(),
-                    const SizedBox(height: 80),
-                  ],
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await _refreshAllData(null); // Refresh all data when pulled
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(), // Ensures scrollability for refresh
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const HeaderSection(),
+                _buildSearchBar(),
+                CategoriesSection(
+                  allCourses: _popularCourses,
+                  onCategorySelected: _openCategoryScreen,
                 ),
-            ],
+                _buildPopularCourses(),
+                _buildTopInstructors(),
+                if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
+                  Column(
+                    children: [
+                      _buildContinueLearning(),
+                      const SizedBox(height: 80),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -700,54 +710,10 @@ class _HomeScreenState extends State<HomeScreen> {
         SizedBox(
           height: 280,
           child: _popularCourses.isEmpty
-              ? FutureBuilder<List<CourseDTO>>(
-            future: _getCoursesWithToken(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return Center(
-                  child: CircularProgressIndicator(
-                    color: AppColors.primary,
-                  ),
-                );
-              }
-              if (snapshot.hasError) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline, size: 32, color: AppColors.textGray),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Error loading courses\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.textGray,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.school_outlined, size: 32, color: AppColors.textGray),
-                      const SizedBox(height: 8),
-                      Text(
-                        'No courses available',
-                        style: TextStyle(
-                          color: AppColors.textGray,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              _popularCourses = snapshot.data!;
-              return _buildCourseList();
-            },
+              ? Center(
+            child: CircularProgressIndicator(
+              color: AppColors.primary,
+            ),
           )
               : _buildCourseList(),
         ),
@@ -774,28 +740,13 @@ class _HomeScreenState extends State<HomeScreen> {
               arguments: {
                 'courseId': course.id,
                 'onEnrollmentChanged': () async {
-                  final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                  if (token != null) {
-                    await _fetchEnrolledCourses(token);
-                  }
+                  // No need to fetch here; refresh will handle it
                 },
                 'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
                   updateEnrollment(updatedEnrollment);
                 },
               },
-            ).then((result) async {
-              if (result != null && result is Map) {
-                final enrollment = result['enrollment'] as EnrollmentDTO?;
-                final course = result['course'] as CourseDTO?;
-                if (enrollment != null && course != null) {
-                  addEnrollment(enrollment, course);
-                }
-              }
-              final token = await Provider.of<AuthService>(context, listen: false).getToken();
-              if (token != null) {
-                await _fetchEnrolledCourses(token);
-              }
-            });
+            );
           },
           onBookmarkChanged: (isBookmarked) {
             updateBookmarkStatus(course.id!, isBookmarked);
@@ -868,28 +819,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     arguments: {
                       'courseId': enrollment.courseId,
                       'onEnrollmentChanged': () async {
-                        final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                        if (token != null) {
-                          await _fetchEnrolledCourses(token);
-                        }
+                        // No need to fetch here; refresh will handle it
                       },
                       'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
                         updateEnrollment(updatedEnrollment);
                       },
                     },
-                  ).then((result) async {
-                    if (result != null && result is Map) {
-                      final enrollment = result['enrollment'] as EnrollmentDTO?;
-                      final course = result['course'] as CourseDTO?;
-                      if (enrollment != null && course != null) {
-                        addEnrollment(enrollment, course);
-                      }
-                    }
-                    final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                    if (token != null) {
-                      await _fetchEnrolledCourses(token);
-                    }
-                  });
+                  );
                 },
                 child: Container(
                   width: 300,
@@ -1018,7 +954,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const PopularCoursesScreen(),
+                      builder: (context) => const AllInstructorsScreen(),
                     ),
                   );
                 },

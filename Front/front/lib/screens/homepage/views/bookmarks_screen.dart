@@ -591,7 +591,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                     const SizedBox(height: 32),
                     ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/home');
+                        Navigator.pushReplacementNamed(context, '/popular-courses');
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
