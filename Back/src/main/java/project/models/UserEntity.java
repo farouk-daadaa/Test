@@ -57,6 +57,16 @@ public class UserEntity {
     private List<Enrollment> enrollments = new ArrayList<>();
 
 
+    @ManyToMany
+    @JoinTable(
+            name = "user_instructor_follow",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "instructor_id")
+    )
+    @JsonIgnoreProperties("followers")
+    private List<Instructor> followedInstructors = new ArrayList<>();
+
+
     @Column(name = "two_factor_enabled")
     @JsonProperty("twoFactorEnabled")
     private boolean twoFactorEnabled = false; // New field for 2FA status

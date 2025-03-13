@@ -38,4 +38,8 @@ public class Instructor {
     @OneToMany(mappedBy = "instructor", cascade = CascadeType.ALL)
     @JsonIgnoreProperties("instructor")
     private List<Course> courses = new ArrayList<>();
+
+    @ManyToMany(mappedBy = "followedInstructors")
+    @JsonIgnoreProperties("followedInstructors")
+    private List<UserEntity> followers = new ArrayList<>();
 }
