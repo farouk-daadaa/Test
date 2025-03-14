@@ -13,6 +13,7 @@ import project.repository.SessionRepository;
 import project.repository.UserRepository;
 import project.security.UserSecurity;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,11 +40,23 @@ public class SessionService {
         if (!userSecurity.isApprovedInstructor((org.springframework.security.core.userdetails.User) authentication.getPrincipal())) {
             throw new IllegalStateException("Only approved instructors can create sessions");
         }
+
+        // Check for overlapping sessions
+        LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
+        LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
+        List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
+        for (Session existing : existingSessions) {
+            if (newStartTime.isBefore(existing.getEndTime()) && newEndTime.isAfter(existing.getStartTime())) {
+                throw new IllegalStateException("This session overlaps with an existing session from " +
+                        existing.getStartTime() + " to " + existing.getEndTime() + " (ID: " + existing.getId() + ")");
+            }
+        }
+
         Session session = new Session();
         session.setTitle(sessionRequestDTO.getTitle());
         session.setDescription(sessionRequestDTO.getDescription());
-        session.setStartTime(sessionRequestDTO.getStartTime());
-        session.setEndTime(sessionRequestDTO.getEndTime());
+        session.setStartTime(newStartTime);
+        session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
         session.setInstructor(instructor);
         Session savedSession = sessionRepository.save(session);
@@ -100,12 +113,23 @@ public class SessionService {
             throw new IllegalStateException("You can only update your own sessions");
         }
 
+        // Check for overlapping sessions (excluding the current session)
+        LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
+        LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
+        List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
+        for (Session existing : existingSessions) {
+            if (!existing.getId().equals(sessionId) &&
+                    newStartTime.isBefore(existing.getEndTime()) && newEndTime.isAfter(existing.getStartTime())) {
+                throw new IllegalStateException("This session overlaps with an existing session from " +
+                        existing.getStartTime() + " to " + existing.getEndTime() + " (ID: " + existing.getId() + ")");
+            }
+        }
+
         session.setTitle(sessionRequestDTO.getTitle());
         session.setDescription(sessionRequestDTO.getDescription());
-        session.setStartTime(sessionRequestDTO.getStartTime());
-        session.setEndTime(sessionRequestDTO.getEndTime());
+        session.setStartTime(newStartTime);
+        session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
-
         Session updatedSession = sessionRepository.save(session);
         return SessionResponseDTO.fromEntity(updatedSession);
     }
