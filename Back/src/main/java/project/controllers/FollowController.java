@@ -7,7 +7,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import project.dto.FollowedInstructorDTO;
 import project.dto.FollowerDTO;
-import project.dto.InstructorDTO;
 import project.models.Instructor;
 import project.models.UserEntity;
 import project.repository.UserRepository;
@@ -29,15 +28,31 @@ public class FollowController {
     @PostMapping("/instructor/{instructorId}")
     public ResponseEntity<Void> followInstructor(@PathVariable Long instructorId, Authentication authentication) {
         Long userId = getUserIdFromAuthentication(authentication);
-        followService.followInstructor(userId, instructorId);
-        return new ResponseEntity<>(HttpStatus.CREATED);
+        try {
+            boolean alreadyFollowing = followService.isFollowing(userId, instructorId);
+            if (alreadyFollowing) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build(); // 409 Conflict
+            }
+            followService.followInstructor(userId, instructorId);
+            return new ResponseEntity<>(HttpStatus.CREATED); // 201 Created
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // 500 on unexpected errors
+        }
     }
 
     @DeleteMapping("/instructor/{instructorId}")
     public ResponseEntity<Void> unfollowInstructor(@PathVariable Long instructorId, Authentication authentication) {
         Long userId = getUserIdFromAuthentication(authentication);
-        followService.unfollowInstructor(userId, instructorId);
-        return ResponseEntity.noContent().build();
+        try {
+            boolean isFollowing = followService.isFollowing(userId, instructorId);
+            if (!isFollowing) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build(); // 404 Not Found
+            }
+            followService.unfollowInstructor(userId, instructorId);
+            return ResponseEntity.noContent().build(); // 204 No Content
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build(); // 500 on unexpected errors
+        }
     }
 
     @GetMapping("/instructor/{instructorId}/followers")

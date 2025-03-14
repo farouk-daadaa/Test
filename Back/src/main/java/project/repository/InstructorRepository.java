@@ -12,6 +12,9 @@ import java.util.Optional;
 @Repository
 public interface InstructorRepository extends JpaRepository<Instructor, Long> {
     List<Instructor> findByStatus(InstructorStatus status);
+
     Optional<Instructor> findByUser(UserEntity user);
+
+    Optional<Instructor> findByUserUsername(String username);
 }
 
