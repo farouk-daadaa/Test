@@ -37,8 +37,9 @@ public class SessionController {
 
     @GetMapping("/student/{studentId}")
     public ResponseEntity<List<SessionResponseDTO>> getAvailableSessions(
-            @PathVariable Long studentId) {
-        List<SessionResponseDTO> sessions = sessionService.getAvailableSessions(studentId);
+            @PathVariable Long studentId,
+            @RequestParam(required = false) String status) {
+        List<SessionResponseDTO> sessions = sessionService.getAvailableSessions(studentId, status);
         return ResponseEntity.ok(sessions);
     }
 
@@ -60,4 +61,25 @@ public class SessionController {
                 .orElseThrow(() -> new IllegalStateException("User not found: " + username))
                 .getId();
     }
+
+    @PutMapping("/{sessionId}")
+    @PreAuthorize("hasRole('INSTRUCTOR')")
+    public ResponseEntity<SessionResponseDTO> updateSession(
+            @PathVariable Long sessionId,
+            @Valid @RequestBody SessionRequestDTO sessionRequestDTO,
+            Authentication authentication) {
+        SessionResponseDTO responseDTO = sessionService.updateSession(sessionId, sessionRequestDTO, authentication);
+        return ResponseEntity.ok(responseDTO);
+    }
+
+    @DeleteMapping("/{sessionId}")
+    @PreAuthorize("hasRole('INSTRUCTOR')")
+    public ResponseEntity<Void> deleteSession(
+            @PathVariable Long sessionId,
+            Authentication authentication) {
+        sessionService.deleteSession(sessionId, authentication);
+        return ResponseEntity.noContent().build();
+    }
+
+
 }
