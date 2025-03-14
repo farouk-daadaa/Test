@@ -6,6 +6,8 @@ import '../../../constants/colors.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/course_service.dart';
 import '../../../services/image_service.dart';
+import '../../../services/instructor_service.dart'; // Add this import
+import 'instructor_profile_screen.dart';
 
 class AllInstructorsScreen extends StatefulWidget {
   const AllInstructorsScreen({super.key});
@@ -18,6 +20,7 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
   late AuthService _authService;
   late CourseService _courseService;
   late ImageService _imageService;
+  late InstructorService _instructorService; // Add InstructorService
   List<Map<String, dynamic>> _instructors = [];
   bool _isLoading = true;
   String? _errorMessage;
@@ -32,10 +35,12 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
     _authService = Provider.of<AuthService>(context, listen: false);
     _courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
     _imageService = ImageService();
+    _instructorService = InstructorService(); // Initialize InstructorService
     final token = await _authService.getToken();
     if (token != null) {
       _courseService.setToken(token);
       _imageService.setToken(token);
+      _instructorService.setToken(token); // Set token for InstructorService
       await _fetchAllInstructors(token);
     } else {
       setState(() {
@@ -59,12 +64,16 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
         if (course.instructorName != null) {
           final instructorName = course.instructorName!;
           if (!instructorData.containsKey(instructorName)) {
-            final instructorId = await _authService.getUserIdByUsername(instructorName);
+            final instructorId = await _instructorService.getInstructorIdByUsername(instructorName); // Use InstructorService
             Uint8List? imageBytes;
             if (instructorId != null) {
-              imageBytes = await _imageService.getUserImage(context, instructorId);
+              final userId = await _instructorService.getUserIdByInstructorId(instructorId); // Get userId for image
+              if (userId != null) {
+                imageBytes = await _imageService.getUserImage(context, userId);
+              }
             }
             instructorData[instructorName] = {
+              'id': instructorId, // Store instructorId
               'name': instructorName,
               'image': imageBytes,
               'courseCount': 0,
@@ -83,6 +92,7 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
         final ratings = data['ratings'] as List<double>;
         final avgRating = ratings.isNotEmpty ? ratings.reduce((a, b) => a + b) / ratings.length : 0.0;
         return {
+          'id': data['id'] as int?, // instructorId
           'name': data['name'] as String,
           'image': data['image'] as Uint8List?,
           'courseCount': data['courseCount'] as int,
@@ -363,6 +373,7 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
   Widget _buildInstructorCard(Map<String, dynamic> instructor, int index) {
     final avgRating = instructor['avgRating'] as double;
     final courseCount = instructor['courseCount'] as int;
+    final instructorId = instructor['id'] as int?;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -384,12 +395,25 @@ class _AllInstructorsScreenState extends State<AllInstructorsScreen> {
           child: InkWell(
             borderRadius: BorderRadius.circular(16),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Viewing ${instructor['name']} courses coming soon!'),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
+              if (instructorId != null) {
+                print('Navigating to profile for instructorId: $instructorId, name: ${instructor['name']}');
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => InstructorProfileScreen(
+                      instructorId: instructorId,
+                      instructorName: instructor['name'] as String,
+                    ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Instructor ID not available'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
             },
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -607,7 +631,7 @@ class InstructorSearchDelegate extends SearchDelegate {
   );
 
   @override
-  Widget buildResults(BuildContext context) => buildSuggestions(context); // Fixed: Removed underscore
+  Widget buildResults(BuildContext context) => buildSuggestions(context);
 
   @override
   Widget buildSuggestions(BuildContext context) {
@@ -641,7 +665,32 @@ class InstructorSearchDelegate extends SearchDelegate {
         subtitle: Text(
           'Courses: ${filtered[index]['courseCount']} | Rating: ${(filtered[index]['avgRating'] as double).toStringAsFixed(1)}',
         ),
-        onTap: () => close(context, filtered[index]),
+        onTap: () {
+          final instructorId = filtered[index]['id'] as int?;
+          if (instructorId != null) {
+            print('Navigating to profile from search for instructorId: $instructorId, name: ${filtered[index]['name']}');
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => InstructorProfileScreen(
+                  instructorId: instructorId,
+                  instructorName: filtered[index]['name'] as String,
+                ),
+              ),
+            ).then((_) {
+              // Close the search overlay after navigation
+              close(context, null);
+            });
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Instructor ID not available'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+            close(context, null); // Still close if no ID
+          }
+        },
       ),
     );
   }
