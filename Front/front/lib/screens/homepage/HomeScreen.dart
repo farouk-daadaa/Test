@@ -3,6 +3,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/all_instructors_screen.dart';
+import 'package:front/screens/homepage/views/instructor_profile_screen.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -11,6 +12,7 @@ import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
+import '../../services/instructor_service.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
@@ -20,7 +22,7 @@ import 'views/popular_courses_screen.dart';
 import 'filter_screen.dart';
 import 'package:collection/collection.dart';
 
-// SearchResultsScreen class (unchanged)
+// SearchResultsScreen (unchanged)
 class SearchResultsScreen extends StatelessWidget {
   final List<CourseDTO> searchResults;
   final CourseService courseService;
@@ -116,8 +118,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
   List<CourseDTO> _featuredCourses = [];
-  List<String> _topInstructors = [];
-  Map<String, Uint8List?> _instructorImages = {};
+  List<Map<String, dynamic>> _topInstructors = []; // {name: String, id: int}
+  Map<String, Uint8List?> _instructorImages = {}; // Restored this
   List<Map<String, dynamic>> _categories = [];
 
   // Search-related variables (unchanged)
@@ -157,7 +159,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // New method to refresh all data
   Future<void> _refreshAllData(String? token) async {
     token ??= await _authService.getToken();
     if (token == null) return;
@@ -224,39 +225,70 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchTopInstructors(String token, BuildContext context) async {
     final allCourses = await courseService.getAllCourses();
     final instructorRatings = <String, List<double>>{};
+    final instructorIds = <String, int>{};
+    final instructorService = InstructorService();
+    instructorService.setToken(token);
+
     for (var course in allCourses) {
       if (course.instructorName != null && course.rating != null) {
         instructorRatings.putIfAbsent(course.instructorName!, () => []).add(course.rating!);
+        if (!instructorIds.containsKey(course.instructorName)) {
+          final id = await instructorService.getInstructorIdByUsername(course.instructorName!);
+          if (id != null) {
+            instructorIds[course.instructorName!] = id;
+          }
+        }
       }
     }
+
     final topInstructors = instructorRatings.entries
         .map((entry) => MapEntry(entry.key, entry.value.reduce((a, b) => a + b) / entry.value.length))
-        .where((entry) => entry.value > 0)
+        .where((entry) => entry.value > 0 && instructorIds.containsKey(entry.key))
         .sorted((a, b) => b.value.compareTo(a.value))
         .take(5)
-        .map((entry) => entry.key)
+        .map((entry) => {'name': entry.key, 'id': instructorIds[entry.key]})
         .toList();
+
     setState(() {
       _topInstructors = topInstructors;
     });
-    for (var instructorName in _topInstructors) {
-      await _fetchInstructorImage(instructorName, context, token);
+
+    // Fetch images for all top instructors
+    for (var instructor in topInstructors) {
+      await _fetchInstructorImage(instructor['name'] as String, instructor['id'] as int, token);
     }
   }
 
-  Future<void> _fetchInstructorImage(String instructorName, BuildContext context, String token) async {
+  Future<void> _fetchInstructorImage(String instructorName, int instructorId, String token) async {
     if (_instructorImages.containsKey(instructorName)) return;
-    final instructorId = await _authService.getUserIdByUsername(instructorName);
-    if (instructorId != null) {
-      final imageBytes = await imageService.getUserImage(context, instructorId);
-      if (imageBytes != null) {
+
+    final instructorService = InstructorService();
+    instructorService.setToken(token);
+    final imageService = ImageService();
+    imageService.setToken(token);
+
+    try {
+      // Get the userId from instructorId
+      final userId = await instructorService.getUserIdByInstructorId(instructorId);
+      if (userId == null) {
+        print('No userId found for instructor: $instructorName (instructorId: $instructorId)');
+        return;
+      }
+
+      print('Fetching image for instructor: $instructorName, userId: $userId');
+      final imageBytes = await imageService.getUserImage(context, userId); // Context still needed for Provider, but token is set
+      if (imageBytes != null && imageBytes.isNotEmpty) {
         setState(() {
           _instructorImages[instructorName] = imageBytes;
+          print('Image loaded for $instructorName: ${imageBytes.length} bytes');
         });
+      } else {
+        print('No image data returned for instructor: $instructorName (userId: $userId)');
       }
+    } catch (e) {
+      print('Error fetching image for instructor $instructorName (instructorId: $instructorId): $e');
     }
   }
-
   Future<void> _fetchCategories(String token) async {
     final adminService = Provider.of<AdminService>(context, listen: false);
     final categories = await adminService.getAllCategories();
@@ -558,10 +590,10 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
-            await _refreshAllData(null); // Refresh all data when pulled
+            await _refreshAllData(null);
           },
           child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(), // Ensures scrollability for refresh
+            physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -978,44 +1010,60 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: _topInstructors.length,
             itemBuilder: (context, index) {
-              final instructorName = _topInstructors[index];
-              return Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundImage: _instructorImages[instructorName] != null
-                          ? MemoryImage(_instructorImages[instructorName]!)
-                          : null,
-                      backgroundColor: _instructorImages[instructorName] == null
-                          ? AppColors.primary.withOpacity(0.1)
-                          : null,
-                      child: _instructorImages[instructorName] == null
-                          ? Text(
-                        instructorName[0],
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
+              final instructor = _topInstructors[index];
+              final instructorName = instructor['name'] as String;
+              final instructorId = instructor['id'] as int;
+              return GestureDetector(
+                  onTap: () {
+                    print('Navigating to profile for instructorId: $instructorId, name: $instructorName');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => InstructorProfileScreen(
+                          instructorId: instructorId,
+                          instructorName: instructorName,
                         ),
-                      )
-                          : null,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      instructorName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[900],
                       ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                    );
+                  },
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundImage: _instructorImages[instructorName] != null
+                            ? MemoryImage(_instructorImages[instructorName]!)
+                            : null,
+                        backgroundColor: _instructorImages[instructorName] == null
+                            ? AppColors.primary.withOpacity(0.1)
+                            : null,
+                        child: _instructorImages[instructorName] == null
+                            ? Text(
+                          instructorName[0],
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        )
+                            : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        instructorName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
