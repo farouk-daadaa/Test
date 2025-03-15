@@ -41,9 +41,14 @@ public class SessionService {
             throw new IllegalStateException("Only approved instructors can create sessions");
         }
 
-        // Check for overlapping sessions
+        // Validate endTime is after startTime
         LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
         LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
+        if (!newEndTime.isAfter(newStartTime)) {
+            throw new IllegalStateException("End time must be after start time");
+        }
+
+        // Check for overlapping sessions
         List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
         for (Session existing : existingSessions) {
             if (newStartTime.isBefore(existing.getEndTime()) && newEndTime.isAfter(existing.getStartTime())) {
@@ -113,9 +118,14 @@ public class SessionService {
             throw new IllegalStateException("You can only update your own sessions");
         }
 
-        // Check for overlapping sessions (excluding the current session)
+        // Validate endTime is after startTime
         LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
         LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
+        if (!newEndTime.isAfter(newStartTime)) {
+            throw new IllegalStateException("End time must be after start time");
+        }
+
+        // Check for overlapping sessions (excluding the current session)
         List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
         for (Session existing : existingSessions) {
             if (!existing.getId().equals(sessionId) &&
