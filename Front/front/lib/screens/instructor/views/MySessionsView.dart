@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:front/constants/colors.dart';
 import 'package:provider/provider.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:intl/intl.dart';
-import 'package:front/constants/colors.dart';
 import '../../../services/SessionService.dart';
 
 class MySessionsView extends StatefulWidget {
@@ -23,7 +24,7 @@ class _MySessionsViewState extends State<MySessionsView> {
   DateTime? _endTime;
   bool _isFollowerOnly = false;
   SessionDTO? _editingSession;
-  final Color primaryColor = const Color(0xFFDB2777);
+  final Color primaryColor = AppColors.primary;
 
   @override
   void didChangeDependencies() {
@@ -37,6 +38,12 @@ class _MySessionsViewState extends State<MySessionsView> {
   @override
   void initState() {
     super.initState();
+    // Auto-refresh every 30 seconds to update UI
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        setState(() {}); // Trigger rebuild to recompute statuses
+      }
+    });
   }
 
   Future<void> _fetchSessions() async {
@@ -331,6 +338,19 @@ class _MySessionsViewState extends State<MySessionsView> {
 
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate() && _startTime != null && _endTime != null) {
+      if (_endTime!.isBefore(_startTime!)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('End time must be after start time'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+        return;
+      }
       _formKey.currentState!.save();
       final session = SessionDTO(
         id: _editingSession?.id,
@@ -385,7 +405,6 @@ class _MySessionsViewState extends State<MySessionsView> {
         );
       }
     } else {
-      // Show validation error for date/time
       if (_startTime == null || _endTime == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -482,6 +501,8 @@ class _MySessionsViewState extends State<MySessionsView> {
         return '#10B981'; // Green
       case 'COMPLETED':
         return '#6B7280'; // Gray
+      case 'ENDED':
+        return '#6B7280'; // Gray
       case 'CANCELLED':
         return '#EF4444'; // Red
       default:
@@ -523,6 +544,7 @@ class _MySessionsViewState extends State<MySessionsView> {
         color: primaryColor,
         child: ListView.builder(
           padding: const EdgeInsets.all(16),
+          physics: const AlwaysScrollableScrollPhysics(),
           itemCount: _sessions.length,
           itemBuilder: (context, index) {
             final session = _sessions[index];
@@ -586,12 +608,22 @@ class _MySessionsViewState extends State<MySessionsView> {
   }
 
   Widget _buildSessionCard(SessionDTO session) {
-    final statusColor = Color(int.parse(_getStatusColor(session.status ?? '').replaceAll('#', '0xFF')));
+    final now = DateTime.now();
+    String computedStatus;
 
-    // Store status as a local variable to avoid multiple null checks
-    final status = session.status ?? '';
-    final isUpcoming = status.toUpperCase() == 'UPCOMING';
-    final isLive = status.toUpperCase() == 'LIVE';
+    if (now.isBefore(session.startTime)) {
+      computedStatus = 'UPCOMING';
+    } else if (now.isAfter(session.startTime) && now.isBefore(session.endTime)) {
+      computedStatus = 'LIVE';
+    } else {
+      computedStatus = 'ENDED';
+    }
+
+    final status = computedStatus.toUpperCase();
+    final isUpcoming = status == 'UPCOMING';
+    final isLive = status == 'LIVE';
+
+    final statusColor = Color(int.parse(_getStatusColor(computedStatus).replaceAll('#', '0xFF')));
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -660,100 +692,122 @@ class _MySessionsViewState extends State<MySessionsView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  session.description,
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontSize: 14,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minHeight: 150,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 8),
-                    Text(
-                      DateFormat('EEEE, MMM d, yyyy').format(session.startTime),
-                      style: TextStyle(
-                        color: Colors.grey[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${DateFormat('h:mm a').format(session.startTime)} - ${DateFormat('h:mm a').format(session.endTime)}',
-                      style: TextStyle(
-                        color: Colors.grey[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      session.isFollowerOnly == true ? Icons.people : Icons.public,
-                      size: 16,
-                      color: Colors.grey[600],
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      session.isFollowerOnly == true ? 'Followers Only' : 'Public Session',
-                      style: TextStyle(
-                        color: Colors.grey[800],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (isLive)
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          // Join session functionality
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Joining session...'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.video_call),
-                        label: const Text('Join'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.green,
-                          side: const BorderSide(color: Colors.green),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        session.description,
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontSize: 14,
                         ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _showSessionForm(session: session),
-                      tooltip: 'Edit',
-                      color: Colors.blue,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () => _showDeleteConfirmation(session.id!, session.title),
-                      tooltip: 'Delete',
-                      color: Colors.red,
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Text(
+                            DateFormat('EEEE, MMM d, yyyy').format(session.startTime),
+                            style: TextStyle(
+                              color: Colors.grey[800],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.access_time, size: 16, color: Colors.grey[600]),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${DateFormat('h:mm a').format(session.startTime.toLocal())} - ${DateFormat('h:mm a').format(session.endTime.toLocal())}',
+                            style: TextStyle(
+                              color: Colors.grey[800],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            session.isFollowerOnly == true ? Icons.people : Icons.public,
+                            size: 16,
+                            color: Colors.grey[600],
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            session.isFollowerOnly == true ? 'Followers Only' : 'Public Session',
+                            style: TextStyle(
+                              color: Colors.grey[800],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (isLive)
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final meetingLink = session.meetingLink;
+                                if (meetingLink.isNotEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Opening meeting: $meetingLink'),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('No meeting link available'),
+                                      backgroundColor: Colors.red,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.video_call),
+                              label: const Text('Join'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.green,
+                                side: const BorderSide(color: Colors.green),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: (isLive || status == 'ENDED' || status == 'CANCELLED')
+                                ? null
+                                : () => _showSessionForm(session: session),
+                            tooltip: 'Edit',
+                            color: Colors.blue,
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () => _showDeleteConfirmation(session.id!, session.title),
+                            tooltip: 'Delete',
+                            color: Colors.red,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -763,4 +817,3 @@ class _MySessionsViewState extends State<MySessionsView> {
     );
   }
 }
-

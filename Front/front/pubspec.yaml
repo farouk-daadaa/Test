@@ -50,6 +50,7 @@ dependencies:
   pinput: ^3.0.1
   url_launcher: ^6.3.0
   intl: ^0.18.1
+  jitsi_meet: ^4.0.0
 
 
 
