@@ -23,6 +23,7 @@ import 'package:front/services/auth_service.dart';
 import 'package:front/screens/homepage/HomeScreen.dart';
 import 'package:front/services/course_service.dart';
 import 'package:front/services/review_service.dart';
+import 'package:front/services/SessionService.dart';
 import 'package:provider/provider.dart';
 
 void main() {
@@ -51,6 +52,9 @@ class AppRoot extends StatelessWidget {
         ),
         Provider<ReviewService>(
           create: (_) => ReviewService(baseUrl: 'http://192.168.1.13:8080'),
+        ),
+        Provider<SessionService>(
+          create: (_) => SessionService(baseUrl: 'http://192.168.1.13:8080'),
         ),
       ],
       child: const MyApp(),

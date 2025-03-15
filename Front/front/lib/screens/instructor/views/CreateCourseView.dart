@@ -144,20 +144,6 @@ class _CreateCourseViewState extends State<CreateCourseView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(Icons.add_box, color: Color(0xFFDB2777), size: 32),
-                const SizedBox(width: 12),
-                Text(
-                  'Create New Course',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFDB2777),
-                  ),
-                ),
-              ],
-            ).animate().fadeIn().slideX(),
             const SizedBox(height: 24),
             Expanded(
               child: SingleChildScrollView(
