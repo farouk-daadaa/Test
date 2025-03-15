@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:front/screens/instructor/views/CourseAnalyticsView.dart';
-import 'package:front/screens/instructor/views/CreateCourseView.dart';
 import 'package:front/screens/instructor/views/MyCoursesView.dart';
+import 'package:front/screens/instructor/views/MySessionsView.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 
@@ -105,8 +105,8 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
             label: 'My Courses',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add_box),
-            label: 'Create Course',
+            icon: Icon(Icons.reduce_capacity),
+            label: 'My Sessions',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.analytics),
@@ -132,7 +132,7 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
           onCreateCoursePressed: onCreateCoursePressed, // Pass the class method
         );
       case 1:
-        return CreateCourseView(key: ValueKey('create'));
+        return MySessionsView(key: ValueKey('sessions'));
       case 2:
         return CourseAnalyticsView(
           key: ValueKey('analytics'),

@@ -3,9 +3,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/course_service.dart';
+import 'CreateCourseView.dart'; // Add this import
 
 class MyCoursesView extends StatefulWidget {
-  final VoidCallback? onCreateCoursePressed; // Add callback parameter
+  final VoidCallback? onCreateCoursePressed;
 
   const MyCoursesView({Key? key, this.onCreateCoursePressed}) : super(key: key);
 
@@ -87,15 +88,27 @@ class _MyCoursesViewState extends State<MyCoursesView> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 16),
-          Expanded(child: _buildCoursesList()),
-        ],
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => CreateCourseView()),
+          );
+        },
+        backgroundColor: Color(0xFFDB2777),
+        child: Icon(Icons.add, color: Colors.white),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 16),
+            Expanded(child: _buildCoursesList()),
+          ],
+        ),
       ),
     );
   }
@@ -181,12 +194,10 @@ class _MyCoursesViewState extends State<MyCoursesView> {
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () {
-                // Use the callback to switch to CreateCourseView
-                if (widget.onCreateCoursePressed != null) {
-                  widget.onCreateCoursePressed!();
-                } else {
-                  print('Error: onCreateCoursePressed callback is null');
-                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => CreateCourseView()),
+                );
               },
               icon: Icon(Icons.add),
               label: Text('Create your first course'),
@@ -270,7 +281,7 @@ class _MyCoursesViewState extends State<MyCoursesView> {
                               context,
                               '/edit-course',
                               arguments: course,
-                            ).then((_) => _loadCourses()); // Reload courses after editing
+                            ).then((_) => _loadCourses());
                           } else if (value == 'delete') {
                             if (course.id == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -295,7 +306,7 @@ class _MyCoursesViewState extends State<MyCoursesView> {
                                     onPressed: () {
                                       Navigator.pop(context);
                                       if (course.id != null) {
-                                        _deleteCourse(course.id!); // Add null assertion here
+                                        _deleteCourse(course.id!);
                                       }
                                     },
                                     child: Text(
