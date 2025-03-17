@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import project.dto.SessionRequestDTO;
 import project.dto.SessionResponseDTO;
+import project.exception.AccessDeniedException;
 import project.models.Instructor;
 import project.models.Session;
 import project.models.UserEntity;
@@ -32,7 +33,7 @@ public class SessionService {
     @Autowired
     private UserSecurity userSecurity;
 
-    public SessionResponseDTO createSession(SessionRequestDTO sessionRequestDTO, Authentication authentication) {
+    public SessionResponseDTO createSession(SessionRequestDTO sessionRequestDTO, Authentication authentication, String meetingLink) {
         String username = authentication.getName();
         Instructor instructor = userRepository.findByUsername(username)
                 .map(userEntity -> userEntity.getInstructor())
@@ -64,6 +65,7 @@ public class SessionService {
         session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
         session.setInstructor(instructor);
+        session.setMeetingLink(meetingLink); // Set the meetingLink before saving
         Session savedSession = sessionRepository.save(session);
         return SessionResponseDTO.fromEntity(savedSession);
     }
@@ -97,9 +99,9 @@ public class SessionService {
         List<Instructor> followedInstructors = student.getFollowedInstructors();
 
         if (!session.isFollowerOnly() || followedInstructors.contains(session.getInstructor())) {
-            return session.getMeetingLink();
+            return session.getMeetingLink(); // Returns the Daily room URL; token generation handled in controller
         } else {
-            throw new IllegalStateException("You are not allowed to join this follower-only session");
+            throw new AccessDeniedException("You are not allowed to join this follower-only session");
         }
     }
 

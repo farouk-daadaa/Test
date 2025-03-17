@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Entity
 @Getter
@@ -28,7 +27,7 @@ public class Session {
     private String description;
 
     @Column(nullable = false, unique = true)
-    private String meetingLink;
+    private String meetingLink; // Stores the Daily room URL
 
     @Column(nullable = false)
     private LocalDateTime startTime;
@@ -47,22 +46,17 @@ public class Session {
     @Column(nullable = false)
     private SessionStatus status;
 
-    // Enum for session status
     public enum SessionStatus {
         UPCOMING, LIVE, ENDED
     }
 
-    // Auto-generate Jitsi Meet link
     @PrePersist
-    protected void generateMeetingLink() {
-        if (this.meetingLink == null || this.meetingLink.isEmpty()) {
-            this.meetingLink = "https://meet.jit.si/" + UUID.randomUUID().toString();
-        }
+    protected void onCreate() {
         updateStatus(); // Set initial status
     }
 
     @PreUpdate
-    protected void updateStatusOnPersist() {
+    protected void onUpdate() {
         updateStatus();
     }
 
@@ -83,5 +77,10 @@ public class Session {
 
     public void setIsFollowerOnly(boolean isFollowerOnly) {
         this.isFollowerOnly = isFollowerOnly;
+    }
+
+    // Helper method to get the instructor's ID
+    public Long getInstructorId() {
+        return instructor != null ? instructor.getId() : null;
     }
 }
