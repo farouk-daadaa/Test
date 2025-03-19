@@ -26,8 +26,8 @@ public class Session {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false, unique = true)
-    private String meetingLink; // Stores the Daily room URL
+    @Column(nullable = true)
+    private String meetingLink;
 
     @Column(nullable = false)
     private LocalDateTime startTime;

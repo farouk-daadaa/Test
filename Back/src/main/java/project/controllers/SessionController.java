@@ -1,29 +1,26 @@
 package project.controllers;
 
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 import project.dto.SessionRequestDTO;
 import project.dto.SessionResponseDTO;
+import project.exception.AccessDeniedException;
 import project.models.Instructor;
 import project.models.Session;
 import project.models.UserEntity;
-import project.models.UserRoleName;
 import project.repository.SessionRepository;
 import project.repository.UserRepository;
+import project.security.HmsTokenService;
 import project.service.SessionService;
 
 import javax.validation.Valid;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,38 +40,70 @@ public class SessionController {
     @Autowired
     private SessionRepository sessionRepository;
 
-    @Value("${daily.api.key}")
-    private String DAILY_API_KEY;
+    @Autowired
+    private HmsTokenService hmsTokenService;
 
-    private static final String DAILY_API_URL = "https://api.daily.co/v1/";
+    @Value("${hms.room.endpoint}")
+    private String HMS_ROOM_ENDPOINT;
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    @Value("${hms.template.id}")
+    private String HMS_TEMPLATE_ID;
+
+    @Value("${hms.management.token}")
+    private String HMS_MANAGEMENT_TOKEN;
+
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @PostMapping("/create")
     @PreAuthorize("hasRole('INSTRUCTOR')")
     public ResponseEntity<Map<String, Object>> createSession(
             @Valid @RequestBody SessionRequestDTO sessionRequestDTO,
-            Authentication authentication) throws Exception {
+            Authentication authentication) {
 
-        // Generate a unique room name for Daily
-        String roomName = "session-" + System.currentTimeMillis();
-        String roomUrl = createDailyRoom(roomName);
+        // Create the session in the database
+        SessionResponseDTO responseDTO = sessionService.createSession(sessionRequestDTO, authentication, null);
 
-        // Create the session in the database with the meetingLink
-        SessionResponseDTO responseDTO = sessionService.createSession(sessionRequestDTO, authentication, roomUrl);
+        // Create a new room in 100ms
+        String roomId;
+        try {
+            roomId = createHmsRoom(sessionRequestDTO.getTitle());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create 100ms room: " + e.getMessage());
+        }
 
-        // Generate a meeting token for the instructor (with is_owner)
-        String instructorToken = createDailyMeetingToken(true);
+        // Update session with the new room_id
+        Session session = sessionRepository.findById(responseDTO.getId())
+                .orElseThrow(() -> new IllegalStateException("Session not found after creation: " + responseDTO.getId()));
+        session.setMeetingLink("room://" + roomId);
+        sessionRepository.save(session);
+        responseDTO.setMeetingLink("room://" + roomId); // Update the DTO
 
-        // Update the response DTO with the meeting link
-        responseDTO.setMeetingLink(roomUrl);
-
-        // Return session details along with the instructor's meeting token
+        // Return session details (no token yet, generated on join)
         Map<String, Object> response = new HashMap<>();
         response.put("session", responseDTO);
-        response.put("meetingToken", instructorToken);
 
         return new ResponseEntity<>(response, HttpStatus.CREATED);
+    }
+
+    // Helper method to create a room in 100ms
+    private String createHmsRoom(String sessionTitle) {
+        Map<String, String> body = new HashMap<>();
+        body.put("name", "session-" + sessionTitle + "-" + System.currentTimeMillis()); // Unique name
+        body.put("description", "Room for session: " + sessionTitle);
+        body.put("template_id", HMS_TEMPLATE_ID);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Bearer " + HMS_MANAGEMENT_TOKEN);
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+        ResponseEntity<Map> response = restTemplate.postForEntity(HMS_ROOM_ENDPOINT, entity, Map.class);
+
+        if (response.getStatusCode() != HttpStatus.OK) {
+            throw new RuntimeException("Failed to create room: " + response.getBody());
+        }
+
+        return (String) response.getBody().get("id"); // Extract room_id
     }
 
     @GetMapping("/student/{studentId}")
@@ -88,7 +117,7 @@ public class SessionController {
     @GetMapping("/join/{sessionId}")
     public ResponseEntity<Map<String, String>> joinSession(
             @PathVariable Long sessionId,
-            Authentication authentication) throws Exception {
+            Authentication authentication) {
 
         String username = authentication.getName();
         UserEntity user = userRepository.findByUsername(username)
@@ -97,26 +126,50 @@ public class SessionController {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalStateException("Session not found: " + sessionId));
 
-        // Get the instructor ID of the session creator
+        // Determine the user's role and enforce security
         Long creatorInstructorId = session.getInstructorId();
         Instructor currentInstructor = user.getInstructor();
-        boolean isOriginalCreator = currentInstructor != null && creatorInstructorId != null && currentInstructor.getId().equals(creatorInstructorId);
+        String role;
+        boolean isAuthorized = false;
 
-        // If the user is not the original creator (i.e., not an instructor or not the creator),
-        // treat them as a student and check if they can join
-        if (!isOriginalCreator) {
-            Long studentId = user.getId();
-            sessionService.joinSession(sessionId, studentId); // This will throw an exception if the student can't join
+        // Check if the user is an admin
+        boolean isAdmin = authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        if (isAdmin) {
+            role = "instructor"; // Admins always join as instructors
+            isAuthorized = true; // Admins can join any session
+        } else if (currentInstructor != null) {
+            // User is an instructor
+            boolean isOriginalCreator = creatorInstructorId != null && currentInstructor.getId().equals(creatorInstructorId);
+            if (isOriginalCreator) {
+                role = "instructor"; // Only the creator gets instructor role
+                isAuthorized = true;
+            } else {
+                role = "student"; // Other instructors get student role
+                isAuthorized = true; // Allow them to join as students
+            }
+        } else {
+            // User is a student
+            role = "student";
+            // Check follower-only restriction
+            List<Instructor> followedInstructors = user.getFollowedInstructors();
+            isAuthorized = !session.isFollowerOnly() || followedInstructors.contains(session.getInstructor());
         }
 
-        String meetingLink = session.getMeetingLink();
+        if (!isAuthorized) {
+            throw new AccessDeniedException("You are not authorized to join this session. " +
+                    (session.isFollowerOnly() ? "This is a follower-only session, and you do not follow the instructor." : ""));
+        }
 
-        // Generate a meeting token: is_owner only for the original creator, false for all others
-        String meetingToken = createDailyMeetingToken(isOriginalCreator);
+        // Extract room_id from meetingLink
+        String roomId = session.getMeetingLink().replace("room://", "");
+
+        // Generate a 100ms auth token using the new service
+        String meetingToken = hmsTokenService.generateHmsToken(roomId, username, role);
 
         Map<String, String> response = new HashMap<>();
-        response.put("meetingLink", meetingLink);
+        response.put("meetingLink", session.getMeetingLink());
         response.put("meetingToken", meetingToken);
+        response.put("roomId", roomId); // Include roomId for clarity in the client
 
         return ResponseEntity.ok(response);
     }
@@ -162,41 +215,5 @@ public class SessionController {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalStateException("User not found: " + username))
                 .getId();
-    }
-
-    private String createDailyRoom(String roomName) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(DAILY_API_URL + "rooms"))
-                .header("Authorization", "Bearer " + DAILY_API_KEY)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        "{\"name\":\"" + roomName + "\",\"properties\":{\"enable_chat\":true}}"))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Failed to create Daily room: " + response.body());
-        }
-
-        JSONObject json = new JSONObject(response.body());
-        return json.getString("url");
-    }
-
-    private String createDailyMeetingToken(boolean isOwner) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(DAILY_API_URL + "meeting-tokens"))
-                .header("Authorization", "Bearer " + DAILY_API_KEY)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        "{\"properties\":{\"is_owner\":" + isOwner + "}}"))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Failed to create Daily meeting token: " + response.body());
-        }
-
-        JSONObject json = new JSONObject(response.body());
-        return json.getString("token");
     }
 }

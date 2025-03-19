@@ -65,8 +65,10 @@ public class SessionService {
         session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
         session.setInstructor(instructor);
-        session.setMeetingLink(meetingLink); // Set the meetingLink before saving
+        // meetingLink can be null initially since the schema will allow it
         Session savedSession = sessionRepository.save(session);
+
+        // The controller will set meetingLink to room://<sessionId> after this
         return SessionResponseDTO.fromEntity(savedSession);
     }
 
@@ -91,7 +93,7 @@ public class SessionService {
                 .collect(Collectors.toList());
     }
 
-    public String joinSession(Long sessionId, Long studentId) {
+    public boolean joinSession(Long sessionId, Long studentId) {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalStateException("Session not found with id: " + sessionId));
         UserEntity student = userRepository.findById(studentId)
@@ -99,7 +101,7 @@ public class SessionService {
         List<Instructor> followedInstructors = student.getFollowedInstructors();
 
         if (!session.isFollowerOnly() || followedInstructors.contains(session.getInstructor())) {
-            return session.getMeetingLink(); // Returns the Daily room URL; token generation handled in controller
+            return true; // Return success indicator instead of meetingLink
         } else {
             throw new AccessDeniedException("You are not allowed to join this follower-only session");
         }
