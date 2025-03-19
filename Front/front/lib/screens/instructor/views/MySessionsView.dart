@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:front/constants/colors.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:intl/intl.dart';
+import 'package:hmssdk_flutter/hmssdk_flutter.dart'; // Import 100ms SDK
 import '../../../services/SessionService.dart';
+import 'MeetingScreen.dart'; // Import the MeetingScreen
 
 class MySessionsView extends StatefulWidget {
   const MySessionsView({Key? key}) : super(key: key);
@@ -13,7 +16,7 @@ class MySessionsView extends StatefulWidget {
   _MySessionsViewState createState() => _MySessionsViewState();
 }
 
-class _MySessionsViewState extends State<MySessionsView> {
+class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateListener {
   late SessionService _sessionService;
   List<SessionDTO> _sessions = [];
   bool _isLoading = true;
@@ -26,6 +29,40 @@ class _MySessionsViewState extends State<MySessionsView> {
   SessionDTO? _editingSession;
   final Color primaryColor = AppColors.primary;
 
+  // 100ms SDK instance
+  late HMSSDK _hmsSDK;
+
+  // Lists to store peers and tracks for the meeting
+  List<HMSPeer> _peers = [];
+  List<HMSVideoTrack> _videoTracks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize 100ms SDK
+    _hmsSDK = HMSSDK();
+    _hmsSDK.build();
+
+    // Add this class as an update listener
+    _hmsSDK.addUpdateListener(listener: this);
+
+    // Auto-refresh every 30 seconds to update UI
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        setState(() {}); // Trigger rebuild to recompute statuses
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Remove the update listener when the widget is disposed
+    _hmsSDK.removeUpdateListener(listener: this);
+    // Leave the meeting if still in it
+    _hmsSDK.leave();
+    super.dispose();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -33,17 +70,6 @@ class _MySessionsViewState extends State<MySessionsView> {
     _sessionService = SessionService(baseUrl: AuthService.baseUrl);
     _sessionService.setToken(authService.token ?? '');
     _fetchSessions();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // Auto-refresh every 30 seconds to update UI
-    Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (mounted) {
-        setState(() {}); // Trigger rebuild to recompute statuses
-      }
-    });
   }
 
   Future<void> _fetchSessions() async {
@@ -66,6 +92,184 @@ class _MySessionsViewState extends State<MySessionsView> {
       );
     }
     setState(() => _isLoading = false);
+  }
+
+  // Method to join a 100ms meeting
+  Future<void> _joinMeeting(String meetingToken, String username) async {
+    try {
+      // Request permissions
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.camera,
+        Permission.microphone,
+        Permission.bluetoothConnect, // Optional
+      ].request();
+
+      // Only camera and microphone are mandatory
+      if (statuses[Permission.camera]!.isDenied || statuses[Permission.microphone]!.isDenied) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Camera and microphone permissions are required.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Bluetooth is optional, just log if denied
+      if (statuses[Permission.bluetoothConnect]?.isDenied ?? false) {
+        print('Bluetooth permission denied, proceeding without it.');
+      }
+
+      HMSConfig config = HMSConfig(
+        authToken: meetingToken,
+        userName: username,
+      );
+      await _hmsSDK.join(config: config);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Joined meeting successfully'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      // Navigation to MeetingScreen is handled in onJoin callback
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to join meeting: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // HMSUpdateListener methods
+  @override
+  void onJoin({required HMSRoom room}) {
+    print('Joined room: ${room.id}');
+    // Update peers list
+    setState(() {
+      _peers = room.peers ?? [];
+    });
+    // Navigate to the meeting screen after joining
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MeetingScreen(
+          hmsSDK: _hmsSDK,
+          peers: _peers,
+          videoTracks: _videoTracks,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void onPeerUpdate({required HMSPeer peer, required HMSPeerUpdate update}) {
+    print('Peer update: ${peer.name}, update: $update');
+    setState(() {
+      if (update == HMSPeerUpdate.peerJoined) {
+        _peers.add(peer);
+      } else if (update == HMSPeerUpdate.peerLeft) {
+        _peers.remove(peer);
+      }
+    });
+  }
+
+  @override
+  void onTrackUpdate({required HMSTrack track, required HMSTrackUpdate trackUpdate, required HMSPeer peer}) {
+    print('Track update: ${track.kind}, update: $trackUpdate, peer: ${peer.name}');
+    if (track.kind == HMSTrackKind.kHMSTrackKindVideo) {
+      setState(() {
+        if (trackUpdate == HMSTrackUpdate.trackAdded) {
+          _videoTracks.add(track as HMSVideoTrack);
+        } else if (trackUpdate == HMSTrackUpdate.trackRemoved) {
+          _videoTracks.remove(track);
+        }
+      });
+    }
+  }
+
+  @override
+  void onError({required HMSException error}) {
+    print('HMS Error: ${error.message}');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Meeting error: ${error.message}'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  @override
+  void onMessage({required HMSMessage message}) {
+    print('Received message: ${message.message}');
+  }
+
+  @override
+  void onRoleChangeRequest({required HMSRoleChangeRequest roleChangeRequest}) {
+    print('Role change request received');
+  }
+
+  @override
+  void onUpdateSpeakers({required List<HMSSpeaker> updateSpeakers}) {
+    print('Speakers updated: ${updateSpeakers.map((s) => s.peer.name).toList()}');
+  }
+
+  @override
+  void onRoomUpdate({required HMSRoom room, required HMSRoomUpdate update}) {
+    print('Room update: $update');
+  }
+
+  @override
+  void onReconnecting() {
+    print('Reconnecting...');
+  }
+
+  @override
+  void onReconnected() {
+    print('Reconnected');
+  }
+
+  @override
+  void onAudioDeviceChanged({HMSAudioDevice? currentAudioDevice, List<HMSAudioDevice>? availableAudioDevice}) {
+    print('Audio device changed: $currentAudioDevice');
+  }
+
+  @override
+  void onChangeTrackStateRequest({required HMSTrackChangeRequest hmsTrackChangeRequest}) {
+    print('Track state change requested: ${hmsTrackChangeRequest.track}');
+  }
+
+  @override
+  void onHMSError({required HMSException error}) {
+    print('HMS Error occurred: ${error.message}');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('HMS Error: ${error.message}'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  @override
+  void onPeerListUpdate({required List<HMSPeer> addedPeers, required List<HMSPeer> removedPeers}) {
+    print('Peer list updated: added ${addedPeers.length}, removed ${removedPeers.length}');
+    setState(() {
+      _peers.addAll(addedPeers);
+      _peers.removeWhere((peer) => removedPeers.contains(peer));
+    });
+  }
+
+  @override
+  void onRemovedFromRoom({required HMSPeerRemovedFromPeer hmsPeerRemovedFromPeer}) {
+    print('Removed from room: ${hmsPeerRemovedFromPeer.reason}');
+    Navigator.pop(context); // Navigate back when removed from the room
+  }
+
+  @override
+  void onSessionStoreAvailable({HMSSessionStore? hmsSessionStore}) {
+    print('Session store available: ${hmsSessionStore != null ? "Initialized" : "Not initialized"}');
   }
 
   void _showSessionForm({SessionDTO? session}) {
@@ -761,26 +965,48 @@ class _MySessionsViewState extends State<MySessionsView> {
                           if (isLive)
                             OutlinedButton.icon(
                               onPressed: () async {
-                                final meetingLink = session.meetingLink;
-                                if (meetingLink.isNotEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Opening meeting: $meetingLink'),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                } else {
+                                final authService = Provider.of<AuthService>(context, listen: false);
+                                await authService.loadToken();
+                                final token = authService.token;
+
+                                if (token == null) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('No meeting link available'),
+                                      content: Text('You need to log in first.'),
                                       backgroundColor: Colors.red,
-                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                try {
+                                  final sessionDetails = await _sessionService.getSessionJoinDetails(session.id!);
+                                  print('Session Join Details: $sessionDetails');
+                                  final meetingToken = sessionDetails["meetingToken"] as String?;
+
+                                  if (meetingToken == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Meeting token is missing.'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  // Join the 100ms meeting
+                                  await _joinMeeting(meetingToken, authService.username ?? 'Instructor');
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Failed to join meeting: $e'),
+                                      backgroundColor: Colors.red,
                                     ),
                                   );
                                 }
                               },
                               icon: const Icon(Icons.video_call),
-                              label: const Text('Join'),
+                              label: const Text('Join Live'),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.green,
                                 side: const BorderSide(color: Colors.green),

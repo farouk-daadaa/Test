@@ -15,6 +15,7 @@ class AuthService with ChangeNotifier {
   String? _userRole;
   String? _instructorStatus;
   String? _username;
+  String? _email; // Added email field
   DateTime? _lastCodeSentTime; // Track when the last 2FA code was sent
   int? _remainingCodeResendTime; // Track the remaining countdown time
   static const int _codeResendCooldown = 300; // 5 minutes in seconds
@@ -24,6 +25,7 @@ class AuthService with ChangeNotifier {
   String? get userRole => _userRole;
   String? get instructorStatus => _instructorStatus;
   String? get username => _username;
+  String? get email => _email; // Getter for email
   int? get remainingCodeResendTime => _remainingCodeResendTime;
 
   Future<bool> _checkInternetConnection() async {
@@ -46,6 +48,8 @@ class AuthService with ChangeNotifier {
     _userRole = await _secureStorage.read(key: 'user_role');
     _instructorStatus = await _secureStorage.read(key: 'instructor_status');
     _username = await _secureStorage.read(key: 'user_name');
+    // Load email from secure storage if available
+    _email = await _secureStorage.read(key: 'user_email');
     // Load last code sent time and remaining countdown time from secure storage
     String? lastSent = await _secureStorage.read(key: 'last_2fa_code_sent');
     if (lastSent != null) {
@@ -66,8 +70,21 @@ class AuthService with ChangeNotifier {
     if (remainingTime != null && _remainingCodeResendTime == null) {
       _remainingCodeResendTime = int.tryParse(remainingTime);
     }
-    print('Loaded token: $_token, userRole: $_userRole, instructorStatus: $_instructorStatus, username: $_username, lastCodeSent: $_lastCodeSentTime, remainingCodeResendTime: $_remainingCodeResendTime');
+    print('Loaded token: $_token, userRole: $_userRole, instructorStatus: $_instructorStatus, username: $_username, email: $_email, lastCodeSent: $_lastCodeSentTime, remainingCodeResendTime: $_remainingCodeResendTime');
     notifyListeners();
+  }
+
+  Future<void> loadUserDetails() async {
+    if (_username != null) {
+      try {
+        final userData = await getUser(_username!);
+        _email = userData['email'] as String?; // Extract email from the API response
+        await _secureStorage.write(key: 'user_email', value: _email); // Store email securely
+        notifyListeners();
+      } catch (e) {
+        print('Error loading user details: $e');
+      }
+    }
   }
 
   Future<Map<String, dynamic>> login(String username, String password, BuildContext context) async {
@@ -104,6 +121,11 @@ class AuthService with ChangeNotifier {
                 await _secureStorage.write(key: 'user_name', value: _username);
               }
 
+              if (userData.containsKey('email')) {
+                _email = userData['email'].toString();
+                await _secureStorage.write(key: 'user_email', value: _email); // Store email
+              }
+
               if (userData['twoFactorEnabled'] == true) {
                 print('2FA enabled, username: $_username, token: $_token');
                 // Check if we need to send a new code
@@ -122,6 +144,7 @@ class AuthService with ChangeNotifier {
           }
 
           notifyListeners();
+          await loadUserDetails(); // Load email after login
           return responseData;
         } else {
           throw Exception('Invalid response format: missing access token');
@@ -316,12 +339,14 @@ class AuthService with ChangeNotifier {
           _userRole = null;
           _instructorStatus = null;
           _username = null;
+          _email = null; // Clear email
           _lastCodeSentTime = null;
           _remainingCodeResendTime = null;
           await _secureStorage.delete(key: 'auth_token');
           await _secureStorage.delete(key: 'user_role');
           await _secureStorage.delete(key: 'instructor_status');
           await _secureStorage.delete(key: 'user_name');
+          await _secureStorage.delete(key: 'user_email'); // Clear email
           await _secureStorage.delete(key: 'last_2fa_code_sent');
           await _secureStorage.delete(key: 'remaining_2fa_code_time');
           notifyListeners(); // Notify listeners to update the app state
@@ -456,6 +481,12 @@ class AuthService with ChangeNotifier {
         if (userData.containsKey('username') && userData['username'] != _username) {
           _username = userData['username'].toString();
           await _secureStorage.write(key: 'user_name', value: _username);
+          notifyListeners();
+        }
+        // Update email if it changed
+        if (userData.containsKey('email') && userData['email'] != _email) {
+          _email = userData['email'].toString();
+          await _secureStorage.write(key: 'user_email', value: _email);
           notifyListeners();
         }
         return updatedData;

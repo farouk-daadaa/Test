@@ -10,9 +10,12 @@
   <string>tel</string>
 </array>
 <key>NSCameraUsageDescription</key>
-<string>We need access to your camera to take photos.</string>
+<string>We need access to your camera for video calls and to take photos.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>We need access to your microphone for video calls.</string>
 <key>NSPhotoLibraryUsageDescription</key>
 <string>We need access to your photo library to select images.</string>
+
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
