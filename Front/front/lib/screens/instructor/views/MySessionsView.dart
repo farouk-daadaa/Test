@@ -5,9 +5,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:intl/intl.dart';
-import 'package:hmssdk_flutter/hmssdk_flutter.dart'; // Import 100ms SDK
+import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import '../../../services/SessionService.dart';
-import 'MeetingScreen.dart'; // Import the MeetingScreen
+import 'LobbyScreen.dart';
 
 class MySessionsView extends StatefulWidget {
   const MySessionsView({Key? key}) : super(key: key);
@@ -30,21 +30,13 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
   final Color primaryColor = AppColors.primary;
 
   // 100ms SDK instance
-  late HMSSDK _hmsSDK;
-
-  // Lists to store peers and tracks for the meeting
-  List<HMSPeer> _peers = [];
-  List<HMSVideoTrack> _videoTracks = [];
+  HMSSDK? _hmsSDK;
 
   @override
   void initState() {
     super.initState();
     // Initialize 100ms SDK
-    _hmsSDK = HMSSDK();
-    _hmsSDK.build();
-
-    // Add this class as an update listener
-    _hmsSDK.addUpdateListener(listener: this);
+    _initializeHMSSDK();
 
     // Auto-refresh every 30 seconds to update UI
     Timer.periodic(const Duration(seconds: 30), (timer) {
@@ -54,12 +46,19 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
     });
   }
 
+  void _initializeHMSSDK() {
+    _hmsSDK = HMSSDK();
+    _hmsSDK!.build();
+    _hmsSDK!.addUpdateListener(listener: this);
+  }
+
   @override
   void dispose() {
     // Remove the update listener when the widget is disposed
-    _hmsSDK.removeUpdateListener(listener: this);
+    _hmsSDK?.removeUpdateListener(listener: this);
     // Leave the meeting if still in it
-    _hmsSDK.leave();
+    _hmsSDK?.leave();
+    _hmsSDK = null;
     super.dispose();
   }
 
@@ -94,8 +93,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
     setState(() => _isLoading = false);
   }
 
-  // Method to join a 100ms meeting
-  Future<void> _joinMeeting(String meetingToken, String username) async {
+  Future<void> _navigateToLobby(String meetingToken, String username) async {
     try {
       // Request permissions
       Map<Permission, PermissionStatus> statuses = await [
@@ -120,23 +118,26 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
         print('Bluetooth permission denied, proceeding without it.');
       }
 
-      HMSConfig config = HMSConfig(
-        authToken: meetingToken,
-        userName: username,
-      );
-      await _hmsSDK.join(config: config);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Joined meeting successfully'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
+      // Reinitialize HMSSDK to ensure a fresh state
+      _hmsSDK?.removeUpdateListener(listener: this);
+      _hmsSDK?.leave();
+      _initializeHMSSDK();
+
+      // Navigate to LobbyScreen
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LobbyScreen(
+            hmsSDK: _hmsSDK!,
+            meetingToken: meetingToken,
+            username: username,
+          ),
         ),
       );
-      // Navigation to MeetingScreen is handled in onJoin callback
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to join meeting: $e'),
+          content: Text('Failed to proceed to lobby: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -147,47 +148,17 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
   @override
   void onJoin({required HMSRoom room}) {
     print('Joined room: ${room.id}');
-    // Update peers list
-    setState(() {
-      _peers = room.peers ?? [];
-    });
-    // Navigate to the meeting screen after joining
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MeetingScreen(
-          hmsSDK: _hmsSDK,
-          peers: _peers,
-          videoTracks: _videoTracks,
-        ),
-      ),
-    );
+    // Navigation to MeetingScreen is handled in LobbyScreen
   }
 
   @override
   void onPeerUpdate({required HMSPeer peer, required HMSPeerUpdate update}) {
     print('Peer update: ${peer.name}, update: $update');
-    setState(() {
-      if (update == HMSPeerUpdate.peerJoined) {
-        _peers.add(peer);
-      } else if (update == HMSPeerUpdate.peerLeft) {
-        _peers.remove(peer);
-      }
-    });
   }
 
   @override
   void onTrackUpdate({required HMSTrack track, required HMSTrackUpdate trackUpdate, required HMSPeer peer}) {
     print('Track update: ${track.kind}, update: $trackUpdate, peer: ${peer.name}');
-    if (track.kind == HMSTrackKind.kHMSTrackKindVideo) {
-      setState(() {
-        if (trackUpdate == HMSTrackUpdate.trackAdded) {
-          _videoTracks.add(track as HMSVideoTrack);
-        } else if (trackUpdate == HMSTrackUpdate.trackRemoved) {
-          _videoTracks.remove(track);
-        }
-      });
-    }
   }
 
   @override
@@ -255,10 +226,6 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
   @override
   void onPeerListUpdate({required List<HMSPeer> addedPeers, required List<HMSPeer> removedPeers}) {
     print('Peer list updated: added ${addedPeers.length}, removed ${removedPeers.length}');
-    setState(() {
-      _peers.addAll(addedPeers);
-      _peers.removeWhere((peer) => removedPeers.contains(peer));
-    });
   }
 
   @override
@@ -994,8 +961,8 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
                                     return;
                                   }
 
-                                  // Join the 100ms meeting
-                                  await _joinMeeting(meetingToken, authService.username ?? 'Instructor');
+                                  // Navigate to LobbyScreen
+                                  await _navigateToLobby(meetingToken, authService.username ?? 'Instructor');
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(

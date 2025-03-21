@@ -9,6 +9,7 @@ import 'package:front/screens/homepage/views/ongoing_courses_screen.dart';
 import 'package:front/screens/homepage/views/popular_courses_screen.dart';
 import 'package:front/screens/instructor/instructor_dashboard_screen.dart';
 import 'package:front/screens/instructor/views/CreateCourseView.dart';
+import 'package:front/screens/instructor/views/MySessionsView.dart';
 import 'package:front/screens/instructor/views/edit_course_view.dart';
 import 'package:front/screens/instructor/views/instructor_course_details_screen.dart';
 import 'package:front/screens/splash_screen.dart';
@@ -108,6 +109,7 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => const ProfileScreen(),
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
+        '/my_sessions': (context) => const MySessionsView(),
         '/course-details': (context) {
           final args = ModalRoute.of(context)!.settings.arguments;
           if (args is int) {
