@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'LobbyScreen.dart';
+import 'package:intl/intl.dart'; // For formatting timestamps
+import 'package:uuid/uuid.dart'; // For generating temporary message IDs
 
 class MeetingScreen extends StatefulWidget {
   final HMSSDK hmsSDK;
@@ -37,6 +40,19 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   bool _isLoading = false;
   bool _isTogglingVideo = false;
   bool _isTogglingAudio = false;
+
+  // Chat-related state
+  final List<HMSMessage> _messages = [];
+  bool _isChatOpen = false;
+  int _unreadMessageCount = 0;
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+
+  // Typing indicator state
+  final List<String> _typingPeers = [];
+  final Map<String, Timer> _typingTimers = {};
+  bool _isTyping = false;
+  Timer? _typingDebounceTimer;
 
   @override
   void initState() {
@@ -130,6 +146,10 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     _peerIdToTrackMap.clear();
     _peers.clear();
     _localPeer = null;
+    _messageController.dispose();
+    _chatScrollController.dispose();
+    _typingDebounceTimer?.cancel();
+    _typingTimers.forEach((_, timer) => timer.cancel());
     super.dispose();
   }
 
@@ -331,6 +351,107 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
   }
 
+  // Chat-related methods
+  void _openChat() {
+    setState(() {
+      _isChatOpen = true;
+      _unreadMessageCount = 0; // Reset unread count when chat is opened
+    });
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildChatBottomSheet(),
+    ).whenComplete(() {
+      setState(() {
+        _isChatOpen = false;
+      });
+    });
+  }
+
+  Future<void> _sendMessage(VoidCallback updateChatUI) async {
+    if (_messageController.text.trim().isEmpty) return;
+
+    String messageText = _messageController.text.trim();
+    try {
+      // Create a temporary message ID
+      String tempMessageId = const Uuid().v4();
+
+      // Create the HMSMessageRecipient for a broadcast message
+      HMSMessageRecipient hmsMessageRecipient = HMSMessageRecipient(
+        hmsMessageRecipientType: HMSMessageRecipientType.BROADCAST,
+        recipientPeer: null,
+        recipientRoles: null,
+      );
+
+      // Create the sent message for immediate UI feedback
+      HMSMessage sentMessage = HMSMessage(
+        messageId: tempMessageId,
+        sender: _localPeer,
+        message: messageText,
+        type: "chat",
+        time: DateTime.now(),
+        hmsMessageRecipient: hmsMessageRecipient,
+      );
+
+      // Add the message to the list and update the UI
+      setState(() {
+        _messages.add(sentMessage);
+        _messageController.clear();
+      });
+
+      // Update the chat UI in the bottom sheet
+      updateChatUI();
+
+      // Auto-scroll to the bottom
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_chatScrollController.hasClients) {
+          _chatScrollController.animateTo(
+            _chatScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+
+      // Send the message to the server
+      await widget.hmsSDK.sendBroadcastMessage(
+        message: messageText,
+        type: "chat",
+      );
+
+      // Stop typing indicator after sending the message
+      _isTyping = false;
+      _typingDebounceTimer?.cancel();
+
+      print('Message sent: $messageText');
+    } catch (e) {
+      print('Error sending message: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send message: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _sendTypingEvent() {
+    if (!_isTyping) {
+      _isTyping = true;
+      widget.hmsSDK.sendBroadcastMessage(
+        message: "typing",
+        type: "typing",
+      );
+      print('Sent typing event');
+    }
+
+    // Reset the typing timer
+    _typingDebounceTimer?.cancel();
+    _typingDebounceTimer = Timer(const Duration(seconds: 3), () {
+      _isTyping = false;
+    });
+  }
+
   // HMSUpdateListener methods
   @override
   void onJoin({required HMSRoom room}) {
@@ -381,7 +502,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
   }
 
-
   void onError({required HMSException error}) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -391,8 +511,56 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   }
 
   @override
-  void onMessage({required HMSMessage message}) {
-    print('Received message: ${message.message}');
+  void onMessage({required HMSMessage message, VoidCallback? updateChatUI}) {
+    setState(() {
+      if (message.type == "typing") {
+        if (message.sender != null && message.sender!.peerId != _localPeer?.peerId) {
+          String peerId = message.sender!.peerId;
+          if (!_typingPeers.contains(peerId)) {
+            _typingPeers.add(peerId);
+            updateChatUI?.call();
+          }
+
+          // Reset the typing timer for this peer
+          _typingTimers[peerId]?.cancel();
+          _typingTimers[peerId] = Timer(const Duration(seconds: 5), () {
+            setState(() {
+              _typingPeers.remove(peerId);
+              _typingTimers.remove(peerId);
+              updateChatUI?.call();
+            });
+          });
+        }
+      } else {
+        // Handle regular chat messages
+        bool isDuplicate = _messages.any((msg) =>
+        msg.message == message.message &&
+            msg.sender?.peerId == message.sender?.peerId &&
+            msg.time.difference(message.time).inSeconds.abs() < 2);
+
+        if (!isDuplicate) {
+          _messages.add(message);
+          if (!_isChatOpen) {
+            _unreadMessageCount++;
+          }
+
+          // Update the chat UI in the bottom sheet
+          updateChatUI?.call();
+
+          // Auto-scroll to the bottom
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_chatScrollController.hasClients) {
+              _chatScrollController.animateTo(
+                _chatScrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+        }
+      }
+    });
+    print('Received message: ${message.message} from ${message.sender?.name}');
   }
 
   @override
@@ -721,6 +889,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                           onTap: _toggleVideo,
                           isLoading: _isTogglingVideo,
                         ),
+                        _buildToggleButton(
+                          icon: Icons.chat,
+                          color: _unreadMessageCount > 0 ? Colors.blue : Colors.white,
+                          onTap: _openChat,
+                          isLoading: false,
+                          badgeCount: _unreadMessageCount,
+                        ),
                         _buildActionButton(
                           text: 'Leave',
                           icon: Icons.call_end,
@@ -752,38 +927,63 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     required Color color,
     required VoidCallback onTap,
     required bool isLoading,
+    int? badgeCount,
   }) {
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.3),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
+    return Stack(
+      children: [
+        GestureDetector(
+          onTap: isLoading ? null : onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.3),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: isLoading
-            ? const SizedBox(
-          width: 30,
-          height: 30,
-          child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 2,
+            child: isLoading
+                ? const SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            )
+                : Icon(
+              icon,
+              color: color,
+              size: 30,
+            ),
           ),
-        )
-            : Icon(
-          icon,
-          color: color,
-          size: 30,
         ),
-      ),
+        if (badgeCount != null && badgeCount > 0)
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                badgeCount.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -842,6 +1042,186 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChatBottomSheet() {
+    return StatefulBuilder(
+      builder: (BuildContext context, StateSetter setBottomSheetState) {
+        onMessage({required HMSMessage message}) {
+          this.onMessage(message: message, updateChatUI: () => setBottomSheetState(() {}));
+        }
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF1A1A2E),
+                    Color(0xFF16213E),
+                  ],
+                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Chat',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Messages List
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _chatScrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final message = _messages[index];
+                        final isMe = message.sender?.peerId == _localPeer?.peerId;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Row(
+                            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            children: [
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: isMe ? Colors.blue.withOpacity(0.8) : Colors.white.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        isMe ? 'You' : (message.sender?.name ?? 'Unknown'),
+                                        style: TextStyle(
+                                          color: isMe ? Colors.white : Colors.white70,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        message.message,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        DateFormat('HH:mm').format(message.time),
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.6),
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  // Typing Indicator
+                  if (_typingPeers.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _typingPeers.length == 1
+                              ? '${_typingPeers.length} is typing...'
+                              : '${_typingPeers.length} are typing...',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 14,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Message Input
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: 'Type a message...',
+                              hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+                              filled: true,
+                              fillColor: Colors.white.withOpacity(0.1),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            ),
+                            onChanged: (value) {
+                              if (value.trim().isNotEmpty) {
+                                _sendTypingEvent();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _sendMessage(() => setBottomSheetState(() {})),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Colors.blue, Colors.blueAccent],
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
