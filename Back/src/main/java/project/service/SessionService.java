@@ -42,14 +42,12 @@ public class SessionService {
             throw new IllegalStateException("Only approved instructors can create sessions");
         }
 
-        // Validate endTime is after startTime
         LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
         LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
         if (!newEndTime.isAfter(newStartTime)) {
             throw new IllegalStateException("End time must be after start time");
         }
 
-        // Check for overlapping sessions
         List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
         for (Session existing : existingSessions) {
             if (newStartTime.isBefore(existing.getEndTime()) && newEndTime.isAfter(existing.getStartTime())) {
@@ -65,10 +63,7 @@ public class SessionService {
         session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
         session.setInstructor(instructor);
-        // meetingLink can be null initially since the schema will allow it
         Session savedSession = sessionRepository.save(session);
-
-        // The controller will set meetingLink to room://<sessionId> after this
         return SessionResponseDTO.fromEntity(savedSession);
     }
 
@@ -84,12 +79,12 @@ public class SessionService {
         if (statusFilter != null && !statusFilter.isEmpty()) {
             Session.SessionStatus filterStatus = Session.SessionStatus.valueOf(statusFilter.toUpperCase());
             return sessions.stream()
-                    .filter(session -> session.getStatus() == filterStatus)
+                    .filter(session -> session.getCurrentStatus() == filterStatus) // Use dynamic status for filtering
                     .map(SessionResponseDTO::fromEntity)
                     .collect(Collectors.toList());
         }
         return sessions.stream()
-                .map(SessionResponseDTO::fromEntity)
+                .map(SessionResponseDTO::fromEntity) // Dynamic status is handled here
                 .collect(Collectors.toList());
     }
 
@@ -101,7 +96,7 @@ public class SessionService {
         List<Instructor> followedInstructors = student.getFollowedInstructors();
 
         if (!session.isFollowerOnly() || followedInstructors.contains(session.getInstructor())) {
-            return true; // Return success indicator instead of meetingLink
+            return true;
         } else {
             throw new AccessDeniedException("You are not allowed to join this follower-only session");
         }
@@ -122,14 +117,12 @@ public class SessionService {
             throw new IllegalStateException("You can only update your own sessions");
         }
 
-        // Validate endTime is after startTime
         LocalDateTime newStartTime = sessionRequestDTO.getStartTime();
         LocalDateTime newEndTime = sessionRequestDTO.getEndTime();
         if (!newEndTime.isAfter(newStartTime)) {
             throw new IllegalStateException("End time must be after start time");
         }
 
-        // Check for overlapping sessions (excluding the current session)
         List<Session> existingSessions = sessionRepository.findByInstructor(instructor);
         for (Session existing : existingSessions) {
             if (!existing.getId().equals(sessionId) &&

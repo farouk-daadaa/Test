@@ -17,7 +17,7 @@ public class SessionResponseDTO {
     private LocalDateTime endTime;
     private boolean isFollowerOnly;
     private Long instructorId;
-    private Session.SessionStatus status;
+    private String status;
 
     public static SessionResponseDTO fromEntity(Session session) {
         SessionResponseDTO dto = new SessionResponseDTO();
@@ -29,7 +29,7 @@ public class SessionResponseDTO {
         dto.setEndTime(session.getEndTime());
         dto.setIsFollowerOnly(session.isFollowerOnly());
         dto.setInstructorId(session.getInstructor().getId());
-        dto.setStatus(session.getStatus());
+        dto.setStatus(session.getCurrentStatus().name());
         return dto;
     }
     public void setIsFollowerOnly(boolean isFollowerOnly) {

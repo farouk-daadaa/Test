@@ -52,15 +52,16 @@ public class Session {
 
     @PrePersist
     protected void onCreate() {
-        updateStatus(); // Set initial status
+        updateStatus(); // Set initial status on creation
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updateStatus();
+        updateStatus(); // Update status on manual updates
     }
 
-    private void updateStatus() {
+    // Made public for explicit calls (e.g., by the scheduled task)
+    public void updateStatus() {
         LocalDateTime now = LocalDateTime.now();
         logger.info("Updating status: now={}, startTime={}, endTime={}", now, startTime, endTime);
         if (now.isBefore(startTime)) {
@@ -75,11 +76,16 @@ public class Session {
         }
     }
 
+    // Get the current status dynamically for API responses
+    public SessionStatus getCurrentStatus() {
+        updateStatus(); // Recalculates the status based on current time
+        return this.status;
+    }
+
     public void setIsFollowerOnly(boolean isFollowerOnly) {
         this.isFollowerOnly = isFollowerOnly;
     }
 
-    // Helper method to get the instructor's ID
     public Long getInstructorId() {
         return instructor != null ? instructor.getId() : null;
     }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert'; // Added for jsonEncode/jsonDecode
 import 'package:flutter/material.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'LobbyScreen.dart';
@@ -40,6 +41,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   bool _isLoading = false;
   bool _isTogglingVideo = false;
   bool _isTogglingAudio = false;
+  bool _isInstructor = false; // New state to track if the local peer is an instructor
 
   // Chat-related state
   final List<HMSMessage> _messages = [];
@@ -53,6 +55,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   final Map<String, Timer> _typingTimers = {};
   bool _isTyping = false;
   Timer? _typingDebounceTimer;
+
+  // Raise Hand state
+  final List<String> _raisedHands = [];
 
   @override
   void initState() {
@@ -72,6 +77,20 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       });
       _localPeer = await widget.hmsSDK.getLocalPeer();
       if (_localPeer != null) {
+        print('Local peer fetched: ${_localPeer!.name}, peerId: ${_localPeer!.peerId}, metadata: ${_localPeer!.metadata}, role: ${_localPeer!.role.name}');
+        // Check if the local peer is an instructor
+        _isInstructor = _localPeer!.role.name.toLowerCase() == "instructor";
+        // Initialize raised hands based on local peer's metadata (if not an instructor)
+        if (!_isInstructor && _localPeer!.metadata != null && _localPeer!.metadata!.isNotEmpty) {
+          try {
+            Map<String, dynamic> metadata = jsonDecode(_localPeer!.metadata!);
+            if (metadata['handRaised'] == true) {
+              _raisedHands.add(_localPeer!.peerId);
+            }
+          } catch (e) {
+            print('Error parsing local peer metadata: $e');
+          }
+        }
         for (int i = 0; i < 3; i++) {
           await Future.delayed(const Duration(milliseconds: 500));
           bool currentVideoState = await _isVideoCurrentlyOn();
@@ -266,6 +285,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       _videoTracks.clear();
       _peerIdToTrackMap.clear();
       _localPeer = null;
+      _raisedHands.clear(); // Clear raised hands on rejoin
     });
     Navigator.pushReplacement(
       context,
@@ -304,6 +324,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                 itemBuilder: (context, index) {
                   final peer = _peers[index];
                   bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
+                  bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: _getPeerColor(peer.name),
@@ -312,7 +333,22 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    title: Text(peer.name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                    title: Row(
+                      children: [
+                        Text(
+                          peer.name,
+                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                        ),
+                        if (!isPeerInstructor && _raisedHands.contains(peer.peerId)) ...[
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.pan_tool,
+                            color: Colors.yellow,
+                            size: 20,
+                          ),
+                        ],
+                      ],
+                    ),
                     trailing: Icon(
                       isMuted ? Icons.mic_off : Icons.mic,
                       color: isMuted ? Colors.red : Colors.green,
@@ -328,6 +364,11 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   }
 
   void _showNotification(String message) {
+    print('Showing notification: $message');
+    if (message.isEmpty) {
+      print('Warning: Notification message is empty');
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(color: Colors.white)),
@@ -374,17 +415,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
     String messageText = _messageController.text.trim();
     try {
-      // Create a temporary message ID
       String tempMessageId = const Uuid().v4();
-
-      // Create the HMSMessageRecipient for a broadcast message
       HMSMessageRecipient hmsMessageRecipient = HMSMessageRecipient(
         hmsMessageRecipientType: HMSMessageRecipientType.BROADCAST,
         recipientPeer: null,
         recipientRoles: null,
       );
 
-      // Create the sent message for immediate UI feedback
       HMSMessage sentMessage = HMSMessage(
         messageId: tempMessageId,
         sender: _localPeer,
@@ -394,16 +431,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         hmsMessageRecipient: hmsMessageRecipient,
       );
 
-      // Add the message to the list and update the UI
       setState(() {
         _messages.add(sentMessage);
         _messageController.clear();
       });
 
-      // Update the chat UI in the bottom sheet
       updateChatUI();
 
-      // Auto-scroll to the bottom
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_chatScrollController.hasClients) {
           _chatScrollController.animateTo(
@@ -414,13 +448,11 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         }
       });
 
-      // Send the message to the server
       await widget.hmsSDK.sendBroadcastMessage(
         message: messageText,
         type: "chat",
       );
 
-      // Stop typing indicator after sending the message
       _isTyping = false;
       _typingDebounceTimer?.cancel();
 
@@ -445,11 +477,68 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       print('Sent typing event');
     }
 
-    // Reset the typing timer
     _typingDebounceTimer?.cancel();
     _typingDebounceTimer = Timer(const Duration(seconds: 3), () {
       _isTyping = false;
     });
+  }
+
+  // Raise Hand methods
+  Future<void> _toggleRaiseHand() async {
+    if (_isInstructor) return; // Prevent instructors from raising hands
+
+    try {
+      if (_localPeer == null) {
+        print('Error: Local peer is null, cannot toggle raise hand');
+        return;
+      }
+
+      bool isHandRaised = _raisedHands.contains(_localPeer!.peerId);
+      Map<String, dynamic> currentMetadata;
+
+      // Safely parse metadata
+      if (_localPeer!.metadata == null || _localPeer!.metadata!.isEmpty) {
+        // If metadata is null or empty, initialize it with default values
+        currentMetadata = {"isBRBOn": false};
+      } else {
+        try {
+          currentMetadata = jsonDecode(_localPeer!.metadata!) as Map<String, dynamic>;
+        } catch (e) {
+          print('Error parsing metadata in toggleRaiseHand: $e');
+          // If parsing fails, initialize with default values
+          currentMetadata = {"isBRBOn": false};
+        }
+      }
+
+      if (isHandRaised) {
+        // Lower hand
+        currentMetadata['handRaised'] = false;
+        currentMetadata.remove("handRaisedAt");
+        String updatedMetadata = jsonEncode(currentMetadata);
+        await widget.hmsSDK.changeMetadata(metadata: updatedMetadata);
+        setState(() {
+          _raisedHands.remove(_localPeer!.peerId);
+        });
+        print('Lowered hand for ${_localPeer!.name}, peerId: ${_localPeer!.peerId}');
+      } else {
+        // Raise hand
+        currentMetadata['handRaised'] = true;
+        currentMetadata["handRaisedAt"] = DateTime.now().millisecondsSinceEpoch;
+        String updatedMetadata = jsonEncode(currentMetadata);
+        await widget.hmsSDK.changeMetadata(metadata: updatedMetadata);
+        setState(() {
+          _raisedHands.add(_localPeer!.peerId);
+        });
+        print('Raised hand for ${_localPeer!.name}, peerId: ${_localPeer!.peerId}');
+      }
+    } catch (e) {
+      print('Error toggling raise hand: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to toggle raise hand: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // HMSUpdateListener methods
@@ -457,6 +546,21 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   void onJoin({required HMSRoom room}) {
     setState(() {
       _peers = (room.peers ?? []).where((peer) => peer.name.isNotEmpty && peer.name != "Unknown").toSet().toList();
+      // Initialize raised hands for all peers based on their metadata
+      for (var peer in _peers) {
+        if (peer.metadata != null && peer.metadata!.isNotEmpty) {
+          try {
+            Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
+            if (metadata['handRaised'] == true || metadata.containsKey('handRaisedAt')) {
+              _raisedHands.add(peer.peerId);
+            }
+          } catch (e) {
+            print('Error parsing metadata for peer ${peer.name}: $e');
+          }
+        }
+      }
+      print('Joined room with peers: ${_peers.map((p) => "${p.name} (peerId: ${p.peerId})").toList()}');
+      print('Initial raised hands: $_raisedHands');
     });
     _updateLocalTracks();
   }
@@ -464,17 +568,106 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   @override
   void onPeerUpdate({required HMSPeer peer, required HMSPeerUpdate update}) {
     if (peer.name.isEmpty || peer.name == "Unknown") return;
+    print('Peer update: ${peer.name}, update: $update');
     setState(() {
       if (update == HMSPeerUpdate.peerJoined) {
         if (!_peers.any((p) => p.peerId == peer.peerId)) {
           _peers.add(peer);
+          if (peer.metadata != null && peer.metadata!.isNotEmpty) {
+            try {
+              Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
+              if (metadata['handRaised'] == true || metadata.containsKey('handRaisedAt')) {
+                _raisedHands.add(peer.peerId);
+              }
+            } catch (e) {
+              print('Error parsing metadata for joining peer ${peer.name}: $e');
+            }
+          }
           _showNotification('${peer.name} joined the meeting');
+          print('Peer joined: ${peer.name}, peerId: ${peer.peerId}, raised hand: ${peer.metadata != null && peer.metadata!.isNotEmpty && (jsonDecode(peer.metadata!)['handRaised'] == true || jsonDecode(peer.metadata!).containsKey('handRaisedAt'))}');
         }
       } else if (update == HMSPeerUpdate.peerLeft) {
         _peers.removeWhere((p) => p.peerId == peer.peerId);
         _peerIdToTrackMap.remove(peer.peerId);
         _videoTracks.removeWhere((track) => _peerIdToTrackMap[peer.peerId] == track);
+        _raisedHands.remove(peer.peerId);
         _showNotification('${peer.name} left the meeting');
+        print('Peer left: ${peer.name}, peerId: ${peer.peerId}');
+      } else if (update == HMSPeerUpdate.handRaiseUpdated) {
+        // Check if the peer has raised their hand (used by the web app)
+        bool isHandRaised = false;
+        if (peer.metadata != null && peer.metadata!.isNotEmpty) {
+          try {
+            Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
+            // Check for our own handRaised field
+            if (metadata['handRaised'] == true) {
+              isHandRaised = true;
+            }
+            // Check for handRaisedAt as a fallback (used by the web app)
+            if (metadata.containsKey('handRaisedAt')) {
+              isHandRaised = true;
+            }
+          } catch (e) {
+            print('Error parsing metadata for peer ${peer.name}: $e');
+          }
+        }
+        if (isHandRaised) {
+          if (!_raisedHands.contains(peer.peerId)) {
+            _raisedHands.add(peer.peerId);
+            // Show notification only if the local peer is not an instructor and the remote peer is not an instructor
+            bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
+            if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
+              _showNotification('${peer.name} raised their hand');
+            }
+            print('Hand raised for ${peer.name}, peerId: ${peer.peerId}');
+          }
+        } else {
+          if (_raisedHands.contains(peer.peerId)) {
+            _raisedHands.remove(peer.peerId);
+            print('Hand lowered for ${peer.name}, peerId: ${peer.peerId}');
+          }
+        }
+        print('Updated raised hands: $_raisedHands');
+      } else if (update == HMSPeerUpdate.metadataChanged) {
+        // Check if hand raise status changed
+        bool isHandRaised = false;
+        if (peer.metadata != null && peer.metadata!.isNotEmpty) {
+          try {
+            Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
+            // Check for our own handRaised field
+            if (metadata['handRaised'] == true) {
+              isHandRaised = true;
+            }
+            // Check for handRaisedAt as a fallback (used by the web app)
+            if (metadata.containsKey('handRaisedAt')) {
+              isHandRaised = true;
+            }
+          } catch (e) {
+            print('Error parsing metadata for peer ${peer.name}: $e');
+          }
+        }
+        if (isHandRaised) {
+          if (!_raisedHands.contains(peer.peerId)) {
+            _raisedHands.add(peer.peerId);
+            // Show notification only if the local peer is not an instructor and the remote peer is not an instructor
+            bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
+            if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
+              _showNotification('${peer.name} raised their hand');
+            }
+            print('Hand raised for ${peer.name}, peerId: ${peer.peerId}');
+          }
+        } else {
+          if (_raisedHands.contains(peer.peerId)) {
+            _raisedHands.remove(peer.peerId);
+            print('Hand lowered for ${peer.name}, peerId: ${peer.peerId}');
+          }
+        }
+        print('Updated raised hands: $_raisedHands');
+      }
+      // Update the peer in the list to reflect any changes (e.g., metadata)
+      int peerIndex = _peers.indexWhere((p) => p.peerId == peer.peerId);
+      if (peerIndex != -1) {
+        _peers[peerIndex] = peer;
       }
     });
   }
@@ -502,6 +695,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
   }
 
+  @override
   void onError({required HMSException error}) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -512,6 +706,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   @override
   void onMessage({required HMSMessage message, VoidCallback? updateChatUI}) {
+    print('Received message: type=${message.type}, message=${message.message}, sender=${message.sender?.name}, senderPeerId=${message.sender?.peerId}');
     setState(() {
       if (message.type == "typing") {
         if (message.sender != null && message.sender!.peerId != _localPeer?.peerId) {
@@ -521,7 +716,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             updateChatUI?.call();
           }
 
-          // Reset the typing timer for this peer
           _typingTimers[peerId]?.cancel();
           _typingTimers[peerId] = Timer(const Duration(seconds: 5), () {
             setState(() {
@@ -532,7 +726,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           });
         }
       } else {
-        // Handle regular chat messages
         bool isDuplicate = _messages.any((msg) =>
         msg.message == message.message &&
             msg.sender?.peerId == message.sender?.peerId &&
@@ -544,10 +737,8 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             _unreadMessageCount++;
           }
 
-          // Update the chat UI in the bottom sheet
           updateChatUI?.call();
 
-          // Auto-scroll to the bottom
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_chatScrollController.hasClients) {
               _chatScrollController.animateTo(
@@ -560,7 +751,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         }
       }
     });
-    print('Received message: ${message.message} from ${message.sender?.name}');
   }
 
   @override
@@ -615,14 +805,27 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         if (peer.name.isEmpty || peer.name == "Unknown") continue;
         if (!_peers.any((p) => p.peerId == peer.peerId)) {
           _peers.add(peer);
+          if (peer.metadata != null && peer.metadata!.isNotEmpty) {
+            try {
+              Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
+              if (metadata['handRaised'] == true || metadata.containsKey('handRaisedAt')) {
+                _raisedHands.add(peer.peerId);
+              }
+            } catch (e) {
+              print('Error parsing metadata for added peer ${peer.name}: $e');
+            }
+          }
           _showNotification('${peer.name} joined the meeting');
+          print('Peer added: ${peer.name}, peerId: ${peer.peerId}, raised hand: ${peer.metadata != null && peer.metadata!.isNotEmpty && (jsonDecode(peer.metadata!)['handRaised'] == true || jsonDecode(peer.metadata!).containsKey('handRaisedAt'))}');
         }
       }
       for (var peer in removedPeers) {
         _peers.removeWhere((p) => p.peerId == peer.peerId);
         _peerIdToTrackMap.remove(peer.peerId);
         _videoTracks.removeWhere((track) => _peerIdToTrackMap[peer.peerId] == track);
+        _raisedHands.remove(peer.peerId);
         _showNotification('${peer.name} left the meeting');
+        print('Peer removed: ${peer.name}, peerId: ${peer.peerId}');
       }
     });
   }
@@ -793,6 +996,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         final videoTrack = _peerIdToTrackMap[peer.peerId];
                         final hasVideo = videoTrack != null && !videoTrack.isMute;
                         bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
+                        bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
 
                         return Container(
                           decoration: BoxDecoration(
@@ -840,13 +1044,25 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                                     color: Colors.black.withOpacity(0.7),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(
-                                    peer.name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        peer.name,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      if (!isPeerInstructor && _raisedHands.contains(peer.peerId)) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.pan_tool,
+                                          color: Colors.yellow,
+                                          size: 16,
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
                               ),
@@ -896,6 +1112,15 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                           isLoading: false,
                           badgeCount: _unreadMessageCount,
                         ),
+                        if (!_isInstructor) // Hide raise hand button for instructors
+                          _buildToggleButton(
+                            icon: _raisedHands.contains(_localPeer?.peerId)
+                                ? Icons.pan_tool
+                                : Icons.pan_tool_outlined,
+                            color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
+                            onTap: _toggleRaiseHand,
+                            isLoading: false,
+                          ),
                         _buildActionButton(
                           text: 'Leave',
                           icon: Icons.call_end,
@@ -1071,7 +1296,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
               ),
               child: Column(
                 children: [
-                  // Header
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Row(
@@ -1092,7 +1316,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                       ],
                     ),
                   ),
-                  // Messages List
                   Expanded(
                     child: ListView.builder(
                       controller: _chatScrollController,
@@ -1150,7 +1373,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                       },
                     ),
                   ),
-                  // Typing Indicator
                   if (_typingPeers.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -1168,7 +1390,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         ),
                       ),
                     ),
-                  // Message Input
                   Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Row(
