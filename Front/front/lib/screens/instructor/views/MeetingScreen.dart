@@ -41,7 +41,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   bool _isLoading = false;
   bool _isTogglingVideo = false;
   bool _isTogglingAudio = false;
-  bool _isInstructor = false; // New state to track if the local peer is an instructor
+  bool _isInstructor = false;
+  bool _isAllMuted = false; // Tracks whether non-instructor participants are muted
+  bool _isMutedByInstructor = false; // Tracks if the local peer was muted by the instructor
 
   // Chat-related state
   final List<HMSMessage> _messages = [];
@@ -78,9 +80,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       _localPeer = await widget.hmsSDK.getLocalPeer();
       if (_localPeer != null) {
         print('Local peer fetched: ${_localPeer!.name}, peerId: ${_localPeer!.peerId}, metadata: ${_localPeer!.metadata}, role: ${_localPeer!.role.name}');
-        // Check if the local peer is an instructor
         _isInstructor = _localPeer!.role.name.toLowerCase() == "instructor";
-        // Initialize raised hands based on local peer's metadata (if not an instructor)
         if (!_isInstructor && _localPeer!.metadata != null && _localPeer!.metadata!.isNotEmpty) {
           try {
             Map<String, dynamic> metadata = jsonDecode(_localPeer!.metadata!);
@@ -228,6 +228,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Future<void> _toggleAudio() async {
     if (_isTogglingAudio || _isLoading) return;
 
+    // Prevent students from unmuting if muted by instructor
+    if (!_isInstructor && _isMutedByInstructor && !_isAudioOn) {
+      _showNotification("You cannot unmute yourself while muted by the instructor.");
+      return;
+    }
+
     setState(() {
       _isTogglingAudio = true;
     });
@@ -260,6 +266,39 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     }
   }
 
+  Future<void> _toggleMuteAll() async {
+    try {
+      List<HMSRole> roles = await widget.hmsSDK.getRoles();
+      List<HMSRole> nonInstructorRoles = roles.where((role) => role.name.toLowerCase() != "instructor").toList();
+
+      if (nonInstructorRoles.isNotEmpty) {
+        await widget.hmsSDK.changeTrackStateForRole(
+          mute: !_isAllMuted,
+          kind: HMSTrackKind.kHMSTrackKindAudio,
+          source: "regular",
+          roles: nonInstructorRoles,
+        );
+
+        // Notify students of the mute state change
+        await widget.hmsSDK.sendBroadcastMessage(
+          message: _isAllMuted ? "unmuted_by_instructor" : "muted_by_instructor",
+          type: "control",
+        );
+
+        setState(() {
+          _isAllMuted = !_isAllMuted;
+        });
+
+        _showNotification(_isAllMuted ? "All participants muted" : "All participants unmuted");
+      } else {
+        _showNotification("No non-instructor roles found to ${_isAllMuted ? 'unmute' : 'mute'}");
+      }
+    } catch (e) {
+      print("Error toggling mute state: $e");
+      _showNotification("Error toggling mute state: $e");
+    }
+  }
+
   Future<void> _leaveMeeting() async {
     try {
       await widget.hmsSDK.leave();
@@ -285,7 +324,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       _videoTracks.clear();
       _peerIdToTrackMap.clear();
       _localPeer = null;
-      _raisedHands.clear(); // Clear raised hands on rejoin
+      _raisedHands.clear();
+      _isAllMuted = false;
+      _isMutedByInstructor = false;
     });
     Navigator.pushReplacement(
       context,
@@ -392,11 +433,10 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     return '${parts[0][0]}${parts.last[0]}'.toUpperCase();
   }
 
-  // Chat-related methods
   void _openChat() {
     setState(() {
       _isChatOpen = true;
-      _unreadMessageCount = 0; // Reset unread count when chat is opened
+      _unreadMessageCount = 0;
     });
     showModalBottomSheet(
       context: context,
@@ -483,9 +523,8 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
   }
 
-  // Raise Hand methods
   Future<void> _toggleRaiseHand() async {
-    if (_isInstructor) return; // Prevent instructors from raising hands
+    if (_isInstructor) return;
 
     try {
       if (_localPeer == null) {
@@ -496,22 +535,18 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       bool isHandRaised = _raisedHands.contains(_localPeer!.peerId);
       Map<String, dynamic> currentMetadata;
 
-      // Safely parse metadata
       if (_localPeer!.metadata == null || _localPeer!.metadata!.isEmpty) {
-        // If metadata is null or empty, initialize it with default values
         currentMetadata = {"isBRBOn": false};
       } else {
         try {
           currentMetadata = jsonDecode(_localPeer!.metadata!) as Map<String, dynamic>;
         } catch (e) {
           print('Error parsing metadata in toggleRaiseHand: $e');
-          // If parsing fails, initialize with default values
           currentMetadata = {"isBRBOn": false};
         }
       }
 
       if (isHandRaised) {
-        // Lower hand
         currentMetadata['handRaised'] = false;
         currentMetadata.remove("handRaisedAt");
         String updatedMetadata = jsonEncode(currentMetadata);
@@ -521,7 +556,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         });
         print('Lowered hand for ${_localPeer!.name}, peerId: ${_localPeer!.peerId}');
       } else {
-        // Raise hand
         currentMetadata['handRaised'] = true;
         currentMetadata["handRaisedAt"] = DateTime.now().millisecondsSinceEpoch;
         String updatedMetadata = jsonEncode(currentMetadata);
@@ -541,12 +575,10 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     }
   }
 
-  // HMSUpdateListener methods
   @override
   void onJoin({required HMSRoom room}) {
     setState(() {
       _peers = (room.peers ?? []).where((peer) => peer.name.isNotEmpty && peer.name != "Unknown").toSet().toList();
-      // Initialize raised hands for all peers based on their metadata
       for (var peer in _peers) {
         if (peer.metadata != null && peer.metadata!.isNotEmpty) {
           try {
@@ -594,16 +626,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         _showNotification('${peer.name} left the meeting');
         print('Peer left: ${peer.name}, peerId: ${peer.peerId}');
       } else if (update == HMSPeerUpdate.handRaiseUpdated) {
-        // Check if the peer has raised their hand (used by the web app)
         bool isHandRaised = false;
         if (peer.metadata != null && peer.metadata!.isNotEmpty) {
           try {
             Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
-            // Check for our own handRaised field
             if (metadata['handRaised'] == true) {
               isHandRaised = true;
             }
-            // Check for handRaisedAt as a fallback (used by the web app)
             if (metadata.containsKey('handRaisedAt')) {
               isHandRaised = true;
             }
@@ -614,7 +643,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         if (isHandRaised) {
           if (!_raisedHands.contains(peer.peerId)) {
             _raisedHands.add(peer.peerId);
-            // Show notification only if the local peer is not an instructor and the remote peer is not an instructor
             bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
             if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
               _showNotification('${peer.name} raised their hand');
@@ -629,16 +657,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         }
         print('Updated raised hands: $_raisedHands');
       } else if (update == HMSPeerUpdate.metadataChanged) {
-        // Check if hand raise status changed
         bool isHandRaised = false;
         if (peer.metadata != null && peer.metadata!.isNotEmpty) {
           try {
             Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
-            // Check for our own handRaised field
             if (metadata['handRaised'] == true) {
               isHandRaised = true;
             }
-            // Check for handRaisedAt as a fallback (used by the web app)
             if (metadata.containsKey('handRaisedAt')) {
               isHandRaised = true;
             }
@@ -649,7 +674,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         if (isHandRaised) {
           if (!_raisedHands.contains(peer.peerId)) {
             _raisedHands.add(peer.peerId);
-            // Show notification only if the local peer is not an instructor and the remote peer is not an instructor
             bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
             if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
               _showNotification('${peer.name} raised their hand');
@@ -664,7 +688,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         }
         print('Updated raised hands: $_raisedHands');
       }
-      // Update the peer in the list to reflect any changes (e.g., metadata)
       int peerIndex = _peers.indexWhere((p) => p.peerId == peer.peerId);
       if (peerIndex != -1) {
         _peers[peerIndex] = peer;
@@ -695,7 +718,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
   }
 
-  @override
   void onError({required HMSException error}) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -724,6 +746,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
               updateChatUI?.call();
             });
           });
+        }
+      } else if (message.type == "control") {
+        if (message.message == "muted_by_instructor" && !_isInstructor) {
+          _isMutedByInstructor = true;
+        } else if (message.message == "unmuted_by_instructor" && !_isInstructor) {
+          _isMutedByInstructor = false;
         }
       } else {
         bool isDuplicate = _messages.any((msg) =>
@@ -912,6 +940,25 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       );
     }
 
+    // Find the instructor peer
+    HMSPeer? instructorPeer;
+    for (var peer in _peers) {
+      if (peer.role.name.toLowerCase() == "instructor") {
+        instructorPeer = peer;
+        break;
+      }
+    }
+
+    // Check if the instructor has their video on
+    bool isInstructorVideoOn = false;
+    if (instructorPeer != null) {
+      final videoTrack = _peerIdToTrackMap[instructorPeer.peerId];
+      isInstructorVideoOn = videoTrack != null && !videoTrack.isMute;
+    }
+
+    // Separate peers into instructor and non-instructor lists
+    List<HMSPeer> nonInstructorPeers = _peers.where((peer) => peer.role.name.toLowerCase() != "instructor").toList();
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -982,110 +1029,187 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         style: TextStyle(color: Colors.white70, fontSize: 18),
                       ),
                     )
-                        : GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 300,
-                        childAspectRatio: 16 / 9,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: _peers.length,
-                      itemBuilder: (context, index) {
-                        final peer = _peers[index];
-                        final videoTrack = _peerIdToTrackMap[peer.peerId];
-                        final hasVideo = videoTrack != null && !videoTrack.isMute;
-                        bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
-                        bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
-
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Stack(
-                            children: [
-                              hasVideo
-                                  ? ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: HMSVideoView(
-                                  track: videoTrack,
-                                  setMirror: peer.peerId == _localPeer?.peerId,
-                                  scaleType: ScaleType.SCALE_ASPECT_BALANCED,
+                        : Column(
+                      children: [
+                        // Display instructor's video at the top if their camera is on
+                        if (instructorPeer != null && isInstructorVideoOn)
+                          Container(
+                            height: MediaQuery.of(context).size.height * 0.3, // 30% of screen height
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
                                 ),
-                              )
-                                  : Center(
-                                child: CircleAvatar(
-                                  radius: 40,
-                                  backgroundColor: _getPeerColor(peer.name),
-                                  child: Text(
-                                    _getInitials(peer.name),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.bold,
+                              ],
+                            ),
+                            child: Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: HMSVideoView(
+                                    track: _peerIdToTrackMap[instructorPeer.peerId]!,
+                                    setMirror: instructorPeer.peerId == _localPeer?.peerId,
+                                    scaleType: ScaleType.SCALE_ASPECT_FIT,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 8,
+                                  left: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      instructorPeer.name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              Positioned(
-                                bottom: 8,
-                                left: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.7),
-                                    borderRadius: BorderRadius.circular(8),
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      instructorPeer.audioTrack?.isMute ?? true ? Icons.mic_off : Icons.mic,
+                                      color: instructorPeer.audioTrack?.isMute ?? true ? Colors.red : Colors.green,
+                                      size: 20,
+                                    ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        peer.name,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
+                                ),
+                              ],
+                            ),
+                          ),
+                        // Display other participants in a grid below
+                        Expanded(
+                          child: nonInstructorPeers.isEmpty && !isInstructorVideoOn
+                              ? const Center(
+                            child: Text(
+                              'No other participants in the meeting',
+                              style: TextStyle(color: Colors.white70, fontSize: 18),
+                            ),
+                          )
+                              : GridView.builder(
+                            padding: const EdgeInsets.all(16),
+                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 300,
+                              childAspectRatio: 16 / 9,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                            itemCount: nonInstructorPeers.length,
+                            itemBuilder: (context, index) {
+                              final peer = nonInstructorPeers[index];
+                              final videoTrack = _peerIdToTrackMap[peer.peerId];
+                              final hasVideo = videoTrack != null && !videoTrack.isMute;
+                              bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
+
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Stack(
+                                  children: [
+                                    hasVideo
+                                        ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: HMSVideoView(
+                                        track: videoTrack,
+                                        setMirror: peer.peerId == _localPeer?.peerId,
+                                        scaleType: ScaleType.SCALE_ASPECT_BALANCED,
+                                      ),
+                                    )
+                                        : Center(
+                                      child: CircleAvatar(
+                                        radius: 40,
+                                        backgroundColor: _getPeerColor(peer.name),
+                                        child: Text(
+                                          _getInitials(peer.name),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 30,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
-                                      if (!isPeerInstructor && _raisedHands.contains(peer.peerId)) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.pan_tool,
-                                          color: Colors.yellow,
-                                          size: 16,
+                                    ),
+                                    Positioned(
+                                      bottom: 8,
+                                      left: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.7),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
-                                      ],
-                                    ],
-                                  ),
+                                        child: Row(
+                                          children: [
+                                            Text(
+                                              peer.name,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                            if (_raisedHands.contains(peer.peerId)) ...[
+                                              const SizedBox(width: 4),
+                                              const Icon(
+                                                Icons.pan_tool,
+                                                color: Colors.yellow,
+                                                size: 16,
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.7),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          isMuted ? Icons.mic_off : Icons.mic,
+                                          color: isMuted ? Colors.red : Colors.green,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withOpacity(0.7),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    isMuted ? Icons.mic_off : Icons.mic,
-                                    color: isMuted ? Colors.red : Colors.green,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                            ],
+                              );
+                            },
                           ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
                   ),
                   Padding(
@@ -1112,13 +1236,20 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                           isLoading: false,
                           badgeCount: _unreadMessageCount,
                         ),
-                        if (!_isInstructor) // Hide raise hand button for instructors
+                        if (!_isInstructor)
                           _buildToggleButton(
                             icon: _raisedHands.contains(_localPeer?.peerId)
                                 ? Icons.pan_tool
                                 : Icons.pan_tool_outlined,
                             color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
                             onTap: _toggleRaiseHand,
+                            isLoading: false,
+                          ),
+                        if (_isInstructor)
+                          _buildToggleButton(
+                            icon: _isAllMuted ? Icons.volume_off : Icons.volume_up,
+                            color: _isAllMuted ? Colors.red : Colors.green,
+                            onTap: _toggleMuteAll,
                             isLoading: false,
                           ),
                         _buildActionButton(
@@ -1273,9 +1404,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Widget _buildChatBottomSheet() {
     return StatefulBuilder(
       builder: (BuildContext context, StateSetter setBottomSheetState) {
-        onMessage({required HMSMessage message}) {
+        ({required HMSMessage message}) {
           this.onMessage(message: message, updateChatUI: () => setBottomSheetState(() {}));
-        }
+        };
 
         return DraggableScrollableSheet(
           initialChildSize: 0.6,
