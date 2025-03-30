@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'LobbyScreen.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'RecordingManager.dart'; // Import the RecordingManager
 
 // Custom class to store chat messages without relying on HMSPeer
 class ChatMessage {
@@ -118,6 +119,11 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Duration _sessionDuration = Duration.zero;
   DateTime? _joinTime;
 
+  // Recording state (NEW)
+  late RecordingManager _recordingManager;
+  bool _isRecording = false;
+  bool _isTogglingRecording = false;
+
   @override
   void initState() {
     super.initState();
@@ -125,6 +131,16 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     _isAudioOn = widget.initialAudioOn;
     _peers = widget.peers.where((peer) => peer.name.isNotEmpty && peer.name != "Unknown").toSet().toList();
     _videoTracks = List.from(widget.videoTracks);
+    // Initialize RecordingManager with a callback to update _isRecording
+    _recordingManager = RecordingManager(
+      hmsSDK: widget.hmsSDK,
+      onRecordingStateChanged: (bool isRecording) {
+        setState(() {
+          _isRecording = isRecording;
+        });
+        print('Recording state changed via callback: $_isRecording');
+      },
+    );
     _loadChatMessages();
     _fetchLocalPeerAndSetup();
     widget.hmsSDK.addUpdateListener(listener: this);
@@ -277,6 +293,11 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     widget.hmsSDK.removeUpdateListener(listener: this);
     widget.hmsSDK.toggleCameraMuteState();
     widget.hmsSDK.toggleMicMuteState();
+    // Stop recording if the instructor leaves (NEW)
+    if (_isInstructor && _isRecording) {
+      _recordingManager.stopRecording();
+    }
+    _recordingManager.dispose(); // Clean up RecordingManager
     _videoTracks.clear();
     _peerIdToTrackMap.clear();
     _peers.clear();
@@ -412,6 +433,59 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       print("Error toggling mute state: $e");
       _showNotification("Error toggling mute state: $e");
     }
+  }
+
+  // Toggle recording (NEW)
+  Future<void> _toggleRecording() async {
+    if (!_isInstructor || _isTogglingRecording) return;
+
+    setState(() {
+      _isTogglingRecording = true;
+    });
+
+    try {
+      bool success;
+      if (_isRecording) {
+        // Stop recording
+        success = await _recordingManager.stopRecording();
+        if (success) {
+          await widget.hmsSDK.sendBroadcastMessage(
+            message: "recording_stopped",
+            type: "control",
+          );
+          _showNotification("Recording stopped");
+        } else {
+          _showNotification("Failed to stop recording");
+        }
+      } else {
+        // Start recording
+        success = await _recordingManager.startRecording();
+        if (success) {
+          await widget.hmsSDK.sendBroadcastMessage(
+            message: "recording_started",
+            type: "control",
+          );
+          _showNotification("Recording started");
+        } else {
+          _showNotification("Failed to start recording");
+        }
+      }
+    } catch (e) {
+      print('Error toggling recording: $e');
+      _showNotification("Error toggling recording: $e");
+    } finally {
+      setState(() {
+        _isTogglingRecording = false;
+      });
+    }
+  }
+
+  // Check recording state on join (NEW)
+  Future<void> _checkRecordingState() async {
+    bool isRecording = await _recordingManager.checkRecordingState();
+    setState(() {
+      _isRecording = isRecording;
+    });
   }
 
   Future<void> _leaveMeeting() async {
@@ -714,6 +788,10 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
     _updateLocalTracks();
     _startSessionTimer();
+    // Check recording state on join for instructor (NEW)
+    if (_isInstructor) {
+      _checkRecordingState();
+    }
   }
 
   @override
@@ -880,6 +958,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           _isMutedByInstructor = true;
         } else if (message.message == "unmuted_by_instructor" && !_isInstructor) {
           _isMutedByInstructor = false;
+        } else if (message.message == "recording_started" && !_isInstructor) { // NEW
+          _isRecording = true;
+          _showNotification("Recording has started");
+        } else if (message.message == "recording_stopped" && !_isInstructor) { // NEW
+          _isRecording = false;
+          _showNotification("Recording has stopped");
         }
       } else {
         bool isDuplicate = _messages.any((msg) =>
@@ -924,6 +1008,16 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   @override
   void onRoomUpdate({required HMSRoom room, required HMSRoomUpdate update}) {
     print('Room update: $update');
+    // Update recording state when HMS notifies us
+    if (update == HMSRoomUpdate.serverRecordingStateUpdated) {
+      // Fetch the recording state from RecordingManager
+      _recordingManager.checkRecordingState().then((isRecording) {
+        setState(() {
+          _isRecording = isRecording;
+        });
+        print('Recording state updated: $_isRecording');
+      });
+    }
   }
 
   @override
@@ -1132,13 +1226,26 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                                   color: Colors.white.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Text(
-                                  _formatDuration(_sessionDuration),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                child: Row(
+                                  children: [
+                                    // Show a red dot when recording is active (NEW)
+                                    if (_isRecording) ...[
+                                      const Icon(
+                                        Icons.fiber_manual_record,
+                                        color: Colors.red,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      _formatDuration(_sessionDuration),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -1381,52 +1488,69 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildToggleButton(
-                          icon: _isAudioOn ? Icons.mic : Icons.mic_off,
-                          color: _isAudioOn ? Colors.green : Colors.red,
-                          onTap: _toggleAudio,
-                          isLoading: _isTogglingAudio,
-                        ),
-                        _buildToggleButton(
-                          icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
-                          color: _isVideoOn ? Colors.green : Colors.red,
-                          onTap: _toggleVideo,
-                          isLoading: _isTogglingVideo,
-                        ),
-                        _buildToggleButton(
-                          icon: Icons.chat,
-                          color: _unreadMessageCount > 0 ? Colors.blue : Colors.white,
-                          onTap: _openChat,
-                          isLoading: false,
-                          badgeCount: _unreadMessageCount,
-                        ),
-                        if (!_isInstructor)
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
                           _buildToggleButton(
-                            icon: _raisedHands.contains(_localPeer?.peerId) ? Icons.pan_tool : Icons.pan_tool_outlined,
-                            color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
-                            onTap: _toggleRaiseHand,
-                            isLoading: false,
+                            icon: _isAudioOn ? Icons.mic : Icons.mic_off,
+                            color: _isAudioOn ? Colors.green : Colors.red,
+                            onTap: _toggleAudio,
+                            isLoading: _isTogglingAudio,
                           ),
-                        if (_isInstructor)
+                          const SizedBox(width: 8), // Add spacing between buttons
                           _buildToggleButton(
-                            icon: _isAllMuted ? Icons.volume_off : Icons.volume_up,
-                            color: _isAllMuted ? Colors.red : Colors.green,
-                            onTap: _toggleMuteAll,
+                            icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
+                            color: _isVideoOn ? Colors.green : Colors.red,
+                            onTap: _toggleVideo,
+                            isLoading: _isTogglingVideo,
+                          ),
+                          const SizedBox(width: 8),
+                          _buildToggleButton(
+                            icon: Icons.chat,
+                            color: _unreadMessageCount > 0 ? Colors.blue : Colors.white,
+                            onTap: _openChat,
                             isLoading: false,
+                            badgeCount: _unreadMessageCount,
                           ),
-                        _buildActionButton(
-                          text: 'Leave',
-                          icon: Icons.call_end,
-                          onTap: _leaveMeeting,
-                          isLoading: false,
-                          gradient: const LinearGradient(
-                            colors: [Colors.red, Colors.redAccent],
+                          const SizedBox(width: 8),
+                          if (!_isInstructor)
+                            _buildToggleButton(
+                              icon: _raisedHands.contains(_localPeer?.peerId) ? Icons.pan_tool : Icons.pan_tool_outlined,
+                              color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
+                              onTap: _toggleRaiseHand,
+                              isLoading: false,
+                            ),
+                          if (!_isInstructor) const SizedBox(width: 8),
+                          if (_isInstructor)
+                            _buildToggleButton(
+                              icon: _isAllMuted ? Icons.volume_off : Icons.volume_up,
+                              color: _isAllMuted ? Colors.red : Colors.green,
+                              onTap: _toggleMuteAll,
+                              isLoading: false,
+                            ),
+                          if (_isInstructor) const SizedBox(width: 8),
+                          // Add Record button for instructor (NEW)
+                          if (_isInstructor)
+                            _buildToggleButton(
+                              icon: _isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
+                              color: _isRecording ? Colors.red : Colors.white,
+                              onTap: _toggleRecording,
+                              isLoading: _isTogglingRecording,
+                            ),
+                          if (_isInstructor) const SizedBox(width: 8),
+                          _buildActionButton(
+                            text: 'Leave',
+                            icon: Icons.call_end,
+                            onTap: _leaveMeeting,
+                            isLoading: false,
+                            gradient: const LinearGradient(
+                              colors: [Colors.red, Colors.redAccent],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -1456,7 +1580,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           onTap: isLoading ? null : onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withOpacity(0.2),
               borderRadius: BorderRadius.circular(30),
@@ -1569,8 +1693,8 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Widget _buildChatBottomSheet() {
     return StatefulBuilder(
       builder: (BuildContext context, StateSetter setBottomSheetState) {
-            ({required HMSMessage message}) {
-          this.onMessage(message: message, updateChatUI: () => setBottomSheetState(() {}));
+        ({required HMSMessage message}) {
+          onMessage(message: message, updateChatUI: () => setBottomSheetState(() {}));
         };
 
         return DraggableScrollableSheet(
