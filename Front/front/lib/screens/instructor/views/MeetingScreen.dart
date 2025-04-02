@@ -6,14 +6,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'LobbyScreen.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import 'RecordingManager.dart'; // Import the RecordingManager
+import 'RecordingManager.dart';
 
 // Custom class to store chat messages without relying on HMSPeer
 class ChatMessage {
   final String messageId;
   final String? senderPeerId;
   final String? senderName;
-  final String? senderUsername; // New field
+  final String? senderUsername;
   final String message;
   final String type;
   final DateTime time;
@@ -42,7 +42,7 @@ class ChatMessage {
     messageId: json['messageId'],
     senderPeerId: json['senderPeerId'],
     senderName: json['senderName'],
-    senderUsername: json['senderUsername'], // May be null for old messages
+    senderUsername: json['senderUsername'],
     message: json['message'],
     type: json['type'],
     time: DateTime.parse(json['time']),
@@ -83,7 +83,7 @@ class MeetingScreen extends StatefulWidget {
   _MeetingScreenState createState() => _MeetingScreenState();
 }
 
-class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListener {
+class _MeetingScreenState extends State<MeetingScreen> with TickerProviderStateMixin implements HMSUpdateListener {
   late bool _isVideoOn;
   late bool _isAudioOn;
   late List<HMSPeer> _peers;
@@ -104,6 +104,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   int _unreadMessageCount = 0;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  bool _showScrollToBottom = false;
 
   // Typing indicator state
   final List<String> _typingPeers = [];
@@ -119,10 +120,15 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Duration _sessionDuration = Duration.zero;
   DateTime? _joinTime;
 
-  // Recording state (NEW)
+  // Recording state
   late RecordingManager _recordingManager;
   bool _isRecording = false;
   bool _isTogglingRecording = false;
+  late AnimationController _recordingBlinkController;
+  late Animation<double> _recordingBlinkAnimation;
+
+  // Animation for video tiles
+  late AnimationController _fadeController;
 
   @override
   void initState() {
@@ -131,22 +137,52 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     _isAudioOn = widget.initialAudioOn;
     _peers = widget.peers.where((peer) => peer.name.isNotEmpty && peer.name != "Unknown").toSet().toList();
     _videoTracks = List.from(widget.videoTracks);
-    // Initialize RecordingManager with a callback to update _isRecording
     _recordingManager = RecordingManager(
       hmsSDK: widget.hmsSDK,
       onRecordingStateChanged: (bool isRecording) {
         setState(() {
           _isRecording = isRecording;
+          if (_isRecording) {
+            _recordingBlinkController.repeat();
+          } else {
+            _recordingBlinkController.stop();
+          }
         });
-        print('Recording state changed via callback: $_isRecording');
       },
     );
     _loadChatMessages();
     _fetchLocalPeerAndSetup();
     widget.hmsSDK.addUpdateListener(listener: this);
+
+    // Initialize recording blink animation
+    _recordingBlinkController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _recordingBlinkAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _recordingBlinkController, curve: Curves.easeInOut),
+    );
+
+    // Initialize fade animation for video tiles
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    )..forward();
+
+    // Chat scroll listener for "scroll to bottom" button
+    _chatScrollController.addListener(() {
+      if (_chatScrollController.offset < _chatScrollController.position.maxScrollExtent - 50) {
+        setState(() {
+          _showScrollToBottom = true;
+        });
+      } else {
+        setState(() {
+          _showScrollToBottom = false;
+        });
+      }
+    });
   }
 
-  // Load chat messages from shared preferences
   Future<void> _loadChatMessages() async {
     final prefs = await SharedPreferences.getInstance();
     final String? messagesJson = prefs.getString('chat_messages_${widget.meetingToken}');
@@ -156,37 +192,27 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         setState(() {
           _messages.addAll(messagesList.map((msg) => ChatMessage.fromJson(msg)));
         });
-        print('Loaded ${_messages.length} chat messages');
       } catch (e) {
         print('Error loading chat messages: $e');
       }
     }
   }
 
-  // Save chat messages to shared preferences
   Future<void> _saveChatMessages() async {
     final prefs = await SharedPreferences.getInstance();
     final List<Map<String, dynamic>> messagesList = _messages.map((msg) => msg.toJson()).toList();
     await prefs.setString('chat_messages_${widget.meetingToken}', jsonEncode(messagesList));
-    print('Saved ${_messages.length} chat messages');
   }
 
-  // Start the session timer when the user joins the meeting
   void _startSessionTimer() async {
     final prefs = await SharedPreferences.getInstance();
     final String? storedJoinTime = prefs.getString('join_time_${widget.meetingToken}');
-
     if (storedJoinTime != null) {
-      // If a join time exists, use it (user is rejoining)
       _joinTime = DateTime.parse(storedJoinTime);
-      print('Restored join time: $_joinTime');
     } else {
-      // First time joining, set and save the join time
       _joinTime = DateTime.now();
       await prefs.setString('join_time_${widget.meetingToken}', _joinTime!.toIso8601String());
-      print('Set new join time: $_joinTime');
     }
-
     _sessionTimer?.cancel();
     _sessionTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -195,7 +221,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     });
   }
 
-  // Format the session duration as HH:MM:SS
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final hours = twoDigits(duration.inHours);
@@ -211,7 +236,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
       });
       _localPeer = await widget.hmsSDK.getLocalPeer();
       if (_localPeer != null) {
-        print('Local peer fetched: ${_localPeer!.name}, peerId: ${_localPeer!.peerId}, metadata: ${_localPeer!.metadata}, role: ${_localPeer!.role.name}');
         _isInstructor = _localPeer!.role.name.toLowerCase() == "instructor";
         if (!_isInstructor && _localPeer!.metadata != null && _localPeer!.metadata!.isNotEmpty) {
           try {
@@ -227,39 +251,28 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           await Future.delayed(const Duration(milliseconds: 500));
           bool currentVideoState = await _isVideoCurrentlyOn();
           bool currentAudioState = await _isAudioCurrentlyOn();
-
-          print('Initial setup - Attempt $i: Current Video: $currentVideoState, Desired: $_isVideoOn, Current Audio: $currentAudioState, Desired: $_isAudioOn');
-
           if (currentVideoState != _isVideoOn) {
             await widget.hmsSDK.toggleCameraMuteState();
-            print('Toggled video to match initial state: $_isVideoOn');
           }
-
           if (currentAudioState != _isAudioOn) {
             await widget.hmsSDK.toggleMicMuteState();
-            print('Toggled audio to match initial state: $_isAudioOn');
           }
-
           HMSLocalPeer? localPeer = await widget.hmsSDK.getLocalPeer();
           if (localPeer != null) {
             bool videoState = localPeer.videoTrack != null && !localPeer.videoTrack!.isMute;
             bool audioState = localPeer.audioTrack != null && !localPeer.audioTrack!.isMute;
             if (videoState == _isVideoOn && audioState == _isAudioOn) {
-              print('Initial states matched after attempt $i');
               break;
             }
           }
         }
-
         await _updateLocalTracks();
-
         HMSLocalPeer? localPeer = await widget.hmsSDK.getLocalPeer();
         if (localPeer != null) {
           setState(() {
             _isVideoOn = localPeer.videoTrack != null && !localPeer.videoTrack!.isMute;
             _isAudioOn = localPeer.audioTrack != null && !localPeer.audioTrack!.isMute;
           });
-          print('Meeting: Final initial states set - Video: $_isVideoOn, Audio: $_isAudioOn');
         }
       }
     } catch (e) {
@@ -293,11 +306,10 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     widget.hmsSDK.removeUpdateListener(listener: this);
     widget.hmsSDK.toggleCameraMuteState();
     widget.hmsSDK.toggleMicMuteState();
-    // Stop recording if the instructor leaves (NEW)
     if (_isInstructor && _isRecording) {
       _recordingManager.stopRecording();
     }
-    _recordingManager.dispose(); // Clean up RecordingManager
+    _recordingManager.dispose();
     _videoTracks.clear();
     _peerIdToTrackMap.clear();
     _peers.clear();
@@ -307,6 +319,8 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     _typingDebounceTimer?.cancel();
     _typingTimers.forEach((_, timer) => timer.cancel());
     _sessionTimer?.cancel();
+    _recordingBlinkController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
@@ -332,11 +346,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   Future<void> _toggleVideo() async {
     if (_isTogglingVideo || _isLoading) return;
-
     setState(() {
       _isTogglingVideo = true;
     });
-
     try {
       await widget.hmsSDK.toggleCameraMuteState();
       HMSLocalPeer? localPeer = await widget.hmsSDK.getLocalPeer();
@@ -345,7 +357,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           _isVideoOn = localPeer.videoTrack != null && !localPeer.videoTrack!.isMute;
         });
         await _updateLocalTracks();
-        print('Meeting: Video toggled - Video: $_isVideoOn');
       }
     } catch (e) {
       print('Error toggling video: $e');
@@ -365,27 +376,20 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   Future<void> _toggleAudio() async {
     if (_isTogglingAudio || _isLoading) return;
-
     if (!_isInstructor && _isMutedByInstructor && !_isAudioOn) {
       _showNotification("You cannot unmute yourself while muted by the instructor.");
       return;
     }
-
     setState(() {
       _isTogglingAudio = true;
     });
-
     try {
       await widget.hmsSDK.toggleMicMuteState();
       HMSLocalPeer? localPeer = await widget.hmsSDK.getLocalPeer();
       if (localPeer != null) {
-        bool newAudioState = localPeer.audioTrack != null && !localPeer.audioTrack!.isMute;
         setState(() {
-          _isAudioOn = newAudioState;
+          _isAudioOn = localPeer.audioTrack != null && !localPeer.audioTrack!.isMute;
         });
-        print('Meeting: Audio toggled - Audio: $_isAudioOn');
-      } else {
-        print('Meeting: Local peer is null after toggling audio');
       }
     } catch (e) {
       print('Error toggling audio: $e');
@@ -407,7 +411,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     try {
       List<HMSRole> roles = await widget.hmsSDK.getRoles();
       List<HMSRole> nonInstructorRoles = roles.where((role) => role.name.toLowerCase() != "instructor").toList();
-
       if (nonInstructorRoles.isNotEmpty) {
         await widget.hmsSDK.changeTrackStateForRole(
           mute: !_isAllMuted,
@@ -415,19 +418,14 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           source: "regular",
           roles: nonInstructorRoles,
         );
-
         await widget.hmsSDK.sendBroadcastMessage(
           message: _isAllMuted ? "unmuted_by_instructor" : "muted_by_instructor",
           type: "control",
         );
-
         setState(() {
           _isAllMuted = !_isAllMuted;
         });
-
         _showNotification(_isAllMuted ? "All participants muted" : "All participants unmuted");
-      } else {
-        _showNotification("No non-instructor roles found to ${_isAllMuted ? 'unmute' : 'mute'}");
       }
     } catch (e) {
       print("Error toggling mute state: $e");
@@ -435,18 +433,14 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     }
   }
 
-  // Toggle recording (NEW)
   Future<void> _toggleRecording() async {
     if (!_isInstructor || _isTogglingRecording) return;
-
     setState(() {
       _isTogglingRecording = true;
     });
-
     try {
       bool success;
       if (_isRecording) {
-        // Stop recording
         success = await _recordingManager.stopRecording();
         if (success) {
           await widget.hmsSDK.sendBroadcastMessage(
@@ -458,7 +452,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           _showNotification("Failed to stop recording");
         }
       } else {
-        // Start recording
         success = await _recordingManager.startRecording();
         if (success) {
           await widget.hmsSDK.sendBroadcastMessage(
@@ -480,11 +473,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     }
   }
 
-  // Check recording state on join (NEW)
   Future<void> _checkRecordingState() async {
     bool isRecording = await _recordingManager.checkRecordingState();
     setState(() {
       _isRecording = isRecording;
+      if (_isRecording) {
+        _recordingBlinkController.repeat();
+      }
     });
   }
 
@@ -534,76 +529,147 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   void _exitToMySessions() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('join_time_${widget.meetingToken}'); // Clear the stored join time
+    await prefs.remove('join_time_${widget.meetingToken}');
     Navigator.pushNamedAndRemoveUntil(context, '/my_sessions', (Route<dynamic> route) => false);
   }
 
   void _showParticipantsList() {
+    TextEditingController searchController = TextEditingController();
+    List<HMSPeer> filteredPeers = List.from(_peers);
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                'Participants (${_peers.length})',
-                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
+                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _peers.length,
-                itemBuilder: (context, index) {
-                  final peer = _peers[index];
-                  bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
-                  bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _getPeerColor(peer.name),
-                      child: Text(
-                        _getInitials(peer.name),
-                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    title: Row(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          peer.name,
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
+                        const Text(
+                          'Participants',
+                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                         ),
-                        if (!isPeerInstructor && _raisedHands.contains(peer.peerId)) ...[
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.pan_tool,
-                            color: Colors.yellow,
-                            size: 20,
-                          ),
-                        ],
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
                       ],
                     ),
-                    trailing: Icon(
-                      isMuted ? Icons.mic_off : Icons.mic,
-                      color: isMuted ? Colors.red : Colors.green,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: TextField(
+                      controller: searchController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Search participants...',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                      ),
+                      onChanged: (value) {
+                        setModalState(() {
+                          filteredPeers = _peers
+                              .where((peer) => peer.name.toLowerCase().contains(value.toLowerCase()))
+                              .toList();
+                        });
+                      },
                     ),
-                  );
-                },
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: filteredPeers.length,
+                      itemBuilder: (context, index) {
+                        final peer = filteredPeers[index];
+                        bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
+                        bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: _getPeerColor(peer.name),
+                            child: Text(
+                              _getInitials(peer.name),
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          title: Row(
+                            children: [
+                              Text(
+                                peer.name,
+                                style: const TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                              if (!isPeerInstructor && _raisedHands.contains(peer.peerId)) ...[
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.pan_tool,
+                                  color: Colors.yellow,
+                                  size: 20,
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isMuted ? Icons.mic_off : Icons.mic,
+                                color: isMuted ? Colors.red : Colors.green,
+                              ),
+                              if (_isInstructor && !isPeerInstructor) ...[
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: Icon(
+                                    isMuted ? Icons.volume_up : Icons.volume_off,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () async {
+                                    await widget.hmsSDK.changeTrackStateForRole(
+                                      mute: !isMuted,
+                                      kind: HMSTrackKind.kHMSTrackKindAudio,
+                                      source: "regular",
+                                      roles: [peer.role],
+                                    );
+                                    _showNotification(isMuted ? "${peer.name} unmuted" : "${peer.name} muted");
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            );
+          },
         );
       },
     );
   }
 
   void _showNotification(String message) {
-    print('Showing notification: $message');
-    if (message.isEmpty) {
-      print('Warning: Notification message is empty');
-      return;
-    }
+    if (message.isEmpty) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(color: Colors.white)),
@@ -646,11 +712,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   Future<void> _sendMessage(VoidCallback updateChatUI) async {
     if (_messageController.text.trim().isEmpty) return;
-
     String messageText = _messageController.text.trim();
     try {
       String tempMessageId = const Uuid().v4();
-
       ChatMessage sentMessage = ChatMessage(
         messageId: tempMessageId,
         senderPeerId: _localPeer?.peerId,
@@ -660,16 +724,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         type: "chat",
         time: DateTime.now(),
       );
-
       setState(() {
         _messages.add(sentMessage);
         _messageController.clear();
       });
-
       await _saveChatMessages();
-
       updateChatUI();
-
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_chatScrollController.hasClients) {
           _chatScrollController.animateTo(
@@ -679,16 +739,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           );
         }
       });
-
       await widget.hmsSDK.sendBroadcastMessage(
         message: messageText,
         type: "chat",
       );
-
       _isTyping = false;
       _typingDebounceTimer?.cancel();
-
-      print('Message sent: $messageText');
     } catch (e) {
       print('Error sending message: $e');
       if (mounted) {
@@ -706,9 +762,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         message: "typing",
         type: "typing",
       );
-      print('Sent typing event');
     }
-
     _typingDebounceTimer?.cancel();
     _typingDebounceTimer = Timer(const Duration(seconds: 3), () {
       _isTyping = false;
@@ -717,27 +771,19 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
 
   Future<void> _toggleRaiseHand() async {
     if (_isInstructor) return;
-
     try {
-      if (_localPeer == null) {
-        print('Error: Local peer is null, cannot toggle raise hand');
-        return;
-      }
-
+      if (_localPeer == null) return;
       bool isHandRaised = _raisedHands.contains(_localPeer!.peerId);
       Map<String, dynamic> currentMetadata;
-
       if (_localPeer!.metadata == null || _localPeer!.metadata!.isEmpty) {
         currentMetadata = {"isBRBOn": false};
       } else {
         try {
           currentMetadata = jsonDecode(_localPeer!.metadata!) as Map<String, dynamic>;
         } catch (e) {
-          print('Error parsing metadata in toggleRaiseHand: $e');
           currentMetadata = {"isBRBOn": false};
         }
       }
-
       if (isHandRaised) {
         currentMetadata['handRaised'] = false;
         currentMetadata.remove("handRaisedAt");
@@ -746,7 +792,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         setState(() {
           _raisedHands.remove(_localPeer!.peerId);
         });
-        print('Lowered hand for ${_localPeer!.name}, peerId: ${_localPeer!.peerId}');
       } else {
         currentMetadata['handRaised'] = true;
         currentMetadata["handRaisedAt"] = DateTime.now().millisecondsSinceEpoch;
@@ -755,7 +800,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         setState(() {
           _raisedHands.add(_localPeer!.peerId);
         });
-        print('Raised hand for ${_localPeer!.name}, peerId: ${_localPeer!.peerId}');
       }
     } catch (e) {
       print('Error toggling raise hand: $e');
@@ -783,12 +827,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           }
         }
       }
-      print('Joined room with peers: ${_peers.map((p) => "${p.name} (peerId: ${p.peerId})").toList()}');
-      print('Initial raised hands: $_raisedHands');
     });
     _updateLocalTracks();
     _startSessionTimer();
-    // Check recording state on join for instructor (NEW)
     if (_isInstructor) {
       _checkRecordingState();
     }
@@ -797,7 +838,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   @override
   void onPeerUpdate({required HMSPeer peer, required HMSPeerUpdate update}) {
     if (peer.name.isEmpty || peer.name == "Unknown") return;
-    print('Peer update: ${peer.name}, update: $update');
     setState(() {
       if (update == HMSPeerUpdate.peerJoined) {
         if (!_peers.any((p) => p.peerId == peer.peerId)) {
@@ -813,7 +853,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             }
           }
           _showNotification('${peer.name} joined the meeting');
-          print('Peer joined: ${peer.name}, peerId: ${peer.peerId}, raised hand: ${peer.metadata != null && peer.metadata!.isNotEmpty && (jsonDecode(peer.metadata!)['handRaised'] == true || jsonDecode(peer.metadata!).containsKey('handRaisedAt'))}');
         }
       } else if (update == HMSPeerUpdate.peerLeft) {
         _peers.removeWhere((p) => p.peerId == peer.peerId);
@@ -821,16 +860,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         _videoTracks.removeWhere((track) => _peerIdToTrackMap[peer.peerId] == track);
         _raisedHands.remove(peer.peerId);
         _showNotification('${peer.name} left the meeting');
-        print('Peer left: ${peer.name}, peerId: ${peer.peerId}');
-      } else if (update == HMSPeerUpdate.handRaiseUpdated) {
+      } else if (update == HMSPeerUpdate.handRaiseUpdated || update == HMSPeerUpdate.metadataChanged) {
         bool isHandRaised = false;
         if (peer.metadata != null && peer.metadata!.isNotEmpty) {
           try {
             Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
-            if (metadata['handRaised'] == true) {
-              isHandRaised = true;
-            }
-            if (metadata.containsKey('handRaisedAt')) {
+            if (metadata['handRaised'] == true || metadata.containsKey('handRaisedAt')) {
               isHandRaised = true;
             }
           } catch (e) {
@@ -844,46 +879,12 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
               _showNotification('${peer.name} raised their hand');
             }
-            print('Hand raised for ${peer.name}, peerId: ${peer.peerId}');
           }
         } else {
           if (_raisedHands.contains(peer.peerId)) {
             _raisedHands.remove(peer.peerId);
-            print('Hand lowered for ${peer.name}, peerId: ${peer.peerId}');
           }
         }
-        print('Updated raised hands: $_raisedHands');
-      } else if (update == HMSPeerUpdate.metadataChanged) {
-        bool isHandRaised = false;
-        if (peer.metadata != null && peer.metadata!.isNotEmpty) {
-          try {
-            Map<String, dynamic> metadata = jsonDecode(peer.metadata!);
-            if (metadata['handRaised'] == true) {
-              isHandRaised = true;
-            }
-            if (metadata.containsKey('handRaisedAt')) {
-              isHandRaised = true;
-            }
-          } catch (e) {
-            print('Error parsing metadata for peer ${peer.name}: $e');
-          }
-        }
-        if (isHandRaised) {
-          if (!_raisedHands.contains(peer.peerId)) {
-            _raisedHands.add(peer.peerId);
-            bool isPeerInstructor = peer.role.name.toLowerCase() == "instructor";
-            if (!_isInstructor && !isPeerInstructor && peer.peerId != _localPeer?.peerId) {
-              _showNotification('${peer.name} raised their hand');
-            }
-            print('Hand raised for ${peer.name}, peerId: ${peer.peerId}');
-          }
-        } else {
-          if (_raisedHands.contains(peer.peerId)) {
-            _raisedHands.remove(peer.peerId);
-            print('Hand lowered for ${peer.name}, peerId: ${peer.peerId}');
-          }
-        }
-        print('Updated raised hands: $_raisedHands');
       }
       int peerIndex = _peers.indexWhere((p) => p.peerId == peer.peerId);
       if (peerIndex != -1) {
@@ -910,31 +911,16 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         int peerIndex = _peers.indexWhere((p) => p.peerId == peer.peerId);
         if (peerIndex != -1) {
           _peers[peerIndex] = peer;
-          // Debug log for instructor
-          if (peer.role.name.toLowerCase() == "instructor") {
-            print('Instructor audio state updated: ${peer.name}, isMute=${peer.audioTrack?.isMute}');
-          }
         }
         if (peer.isLocal) {
           _isAudioOn = !track.isMute;
         }
-        print('Audio track updated for peer ${peer.name}: isMute=${track.isMute}');
       }
     });
   }
 
-
-  void onError({required HMSException error}) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Meeting error: ${error.message}'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
   @override
   void onMessage({required HMSMessage message, VoidCallback? updateChatUI}) {
-    print('Received message: type=${message.type}, message=${message.message}, sender=${message.sender?.name}, senderPeerId=${message.sender?.peerId}');
     setState(() {
       if (message.type == "typing") {
         if (message.sender != null && message.sender!.peerId != _localPeer?.peerId) {
@@ -943,7 +929,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             _typingPeers.add(peerId);
             updateChatUI?.call();
           }
-
           _typingTimers[peerId]?.cancel();
           _typingTimers[peerId] = Timer(const Duration(seconds: 5), () {
             setState(() {
@@ -958,11 +943,13 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           _isMutedByInstructor = true;
         } else if (message.message == "unmuted_by_instructor" && !_isInstructor) {
           _isMutedByInstructor = false;
-        } else if (message.message == "recording_started" && !_isInstructor) { // NEW
+        } else if (message.message == "recording_started" && !_isInstructor) {
           _isRecording = true;
+          _recordingBlinkController.repeat();
           _showNotification("Recording has started");
-        } else if (message.message == "recording_stopped" && !_isInstructor) { // NEW
+        } else if (message.message == "recording_stopped" && !_isInstructor) {
           _isRecording = false;
+          _recordingBlinkController.stop();
           _showNotification("Recording has stopped");
         }
       } else {
@@ -970,7 +957,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         msg.message == message.message &&
             msg.senderPeerId == message.sender?.peerId &&
             msg.time.difference(message.time).inSeconds.abs() < 2);
-
         if (!isDuplicate) {
           String? usernameToStore = (message.sender?.peerId == _localPeer?.peerId) ? widget.username : null;
           _messages.add(ChatMessage.fromHMSMessage(message, usernameToStore));
@@ -978,9 +964,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           if (!_isChatOpen) {
             _unreadMessageCount++;
           }
-
           updateChatUI?.call();
-
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_chatScrollController.hasClients) {
               _chatScrollController.animateTo(
@@ -996,62 +980,23 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   }
 
   @override
-  void onRoleChangeRequest({required HMSRoleChangeRequest roleChangeRequest}) {
-    print('Role change request received');
-  }
-
-  @override
-  void onUpdateSpeakers({required List<HMSSpeaker> updateSpeakers}) {
-    print('Speakers updated: ${updateSpeakers.map((s) => s.peer.name).toList()}');
-  }
-
-  @override
   void onRoomUpdate({required HMSRoom room, required HMSRoomUpdate update}) {
-    print('Room update: $update');
-    // Update recording state when HMS notifies us
     if (update == HMSRoomUpdate.serverRecordingStateUpdated) {
-      // Fetch the recording state from RecordingManager
       _recordingManager.checkRecordingState().then((isRecording) {
         setState(() {
           _isRecording = isRecording;
+          if (_isRecording) {
+            _recordingBlinkController.repeat();
+          } else {
+            _recordingBlinkController.stop();
+          }
         });
-        print('Recording state updated: $_isRecording');
       });
     }
   }
 
   @override
-  void onReconnecting() {
-    print('Reconnecting...');
-  }
-
-  @override
-  void onReconnected() {
-    print('Reconnected');
-  }
-
-  @override
-  void onAudioDeviceChanged({HMSAudioDevice? currentAudioDevice, List<HMSAudioDevice>? availableAudioDevice}) {
-    print('Audio device changed: Current device: $currentAudioDevice, Available devices: $availableAudioDevice');
-  }
-
-  @override
-  void onChangeTrackStateRequest({required HMSTrackChangeRequest hmsTrackChangeRequest}) {
-    print('Track state change requested: ${hmsTrackChangeRequest.track}');
-  }
-
-  @override
-  void onHMSError({required HMSException error}) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('HMS Error: ${error.message}'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  @override
   void onPeerListUpdate({required List<HMSPeer> addedPeers, required List<HMSPeer> removedPeers}) {
-    print('Peer list updated: added ${addedPeers.length}, removed ${removedPeers.length}');
     setState(() {
       for (var peer in addedPeers) {
         if (peer.name.isEmpty || peer.name == "Unknown") continue;
@@ -1068,7 +1013,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             }
           }
           _showNotification('${peer.name} joined the meeting');
-          print('Peer added: ${peer.name}, peerId: ${peer.peerId}, raised hand: ${peer.metadata != null && peer.metadata!.isNotEmpty && (jsonDecode(peer.metadata!)['handRaised'] == true || jsonDecode(peer.metadata!).containsKey('handRaisedAt'))}');
         }
       }
       for (var peer in removedPeers) {
@@ -1077,7 +1021,6 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         _videoTracks.removeWhere((track) => _peerIdToTrackMap[peer.peerId] == track);
         _raisedHands.remove(peer.peerId);
         _showNotification('${peer.name} left the meeting');
-        print('Peer removed: ${peer.name}, peerId: ${peer.peerId}');
       }
     });
   }
@@ -1085,7 +1028,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   @override
   void onRemovedFromRoom({required HMSPeerRemovedFromPeer hmsPeerRemovedFromPeer}) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('join_time_${widget.meetingToken}'); // Clear the stored join time
+    await prefs.remove('join_time_${widget.meetingToken}');
     if (mounted) {
       setState(() {
         _hasLeftMeeting = true;
@@ -1095,9 +1038,23 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   }
 
   @override
-  void onSessionStoreAvailable({HMSSessionStore? hmsSessionStore}) {
-    print('Session store available: ${hmsSessionStore != null ? "Initialized" : "Not initialized"}');
-  }
+  void onError({required HMSException error}) {}
+  @override
+  void onRoleChangeRequest({required HMSRoleChangeRequest roleChangeRequest}) {}
+  @override
+  void onUpdateSpeakers({required List<HMSSpeaker> updateSpeakers}) {}
+  @override
+  void onReconnecting() {}
+  @override
+  void onReconnected() {}
+  @override
+  void onAudioDeviceChanged({HMSAudioDevice? currentAudioDevice, List<HMSAudioDevice>? availableAudioDevice}) {}
+  @override
+  void onChangeTrackStateRequest({required HMSTrackChangeRequest hmsTrackChangeRequest}) {}
+  @override
+  void onHMSError({required HMSException error}) {}
+  @override
+  void onSessionStoreAvailable({HMSSessionStore? hmsSessionStore}) {}
 
   @override
   Widget build(BuildContext context) {
@@ -1108,10 +1065,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF1A1A2E),
-                Color(0xFF16213E),
-              ],
+              colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
             ),
           ),
           child: Center(
@@ -1156,9 +1110,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                   text: 'Exit',
                   onTap: _exitToMySessions,
                   isLoading: false,
-                  gradient: const LinearGradient(
-                    colors: [Colors.red, Colors.redAccent],
-                  ),
+                  gradient: const LinearGradient(colors: [Colors.red, Colors.redAccent]),
                 ),
               ],
             ),
@@ -1189,10 +1141,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1A1A2E),
-              Color(0xFF16213E),
-            ],
+            colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
           ),
         ),
         child: SafeArea(
@@ -1200,48 +1149,64 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
             children: [
               Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  // Modernized App Bar
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2A2A4A), Color(0xFF1A1A2E)],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
+                        Flexible(
                           child: Row(
                             children: [
-                              Expanded(
+                              Flexible(
                                 child: Text(
                                   'Live Meeting Room',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
-                                    fontSize: 24,
+                                    fontSize: MediaQuery.of(context).size.width < 300 ? 16 : 20, // Responsive font size
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 8), // Reduced spacing for smaller screens
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // Reduced padding
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // Show a red dot when recording is active (NEW)
                                     if (_isRecording) ...[
-                                      const Icon(
-                                        Icons.fiber_manual_record,
-                                        color: Colors.red,
-                                        size: 16,
+                                      FadeTransition(
+                                        opacity: _recordingBlinkAnimation,
+                                        child: const Icon(
+                                          Icons.fiber_manual_record,
+                                          color: Colors.red,
+                                          size: 14, // Reduced size
+                                        ),
                                       ),
-                                      const SizedBox(width: 4),
+                                      const SizedBox(width: 4), // Reduced spacing
                                     ],
                                     Text(
                                       _formatDuration(_sessionDuration),
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: Colors.white,
-                                        fontSize: 16,
+                                        fontSize: MediaQuery.of(context).size.width < 300 ? 14 : 16, // Responsive font size
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -1255,24 +1220,20 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         GestureDetector(
                           onTap: _showParticipantsList,
                           child: Container(
-                            constraints: const BoxConstraints(maxWidth: 120),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), // Adjusted padding
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.1),
+                              color: Colors.white.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: Colors.white.withOpacity(0.2)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.people_alt_outlined, color: Colors.white, size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '${_peers.length} Participants',
-                                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                const Icon(Icons.people_alt_outlined, color: Colors.white, size: 18), // Reduced size
+                                const SizedBox(width: 6), // Reduced spacing
+                                Text(
+                                  '${_peers.length}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 14),
                                 ),
                               ],
                             ),
@@ -1292,82 +1253,94 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                         : Column(
                       children: [
                         if (instructorPeer != null)
-                          Container(
-                            height: MediaQuery.of(context).size.height * 0.3,
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.black,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Stack(
-                              children: [
-                                if (isInstructorVideoOn)
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: HMSVideoView(
-                                      track: _peerIdToTrackMap[instructorPeer.peerId]!,
-                                      setMirror: instructorPeer.peerId == _localPeer?.peerId,
-                                      scaleType: ScaleType.SCALE_ASPECT_FIT,
+                          FadeTransition(
+                            opacity: _fadeController,
+                            child: Container(
+                              height: MediaQuery.of(context).size.height * 0.3,
+                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Stack(
+                                children: [
+                                  if (isInstructorVideoOn)
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(12),
+                                      child: HMSVideoView(
+                                        track: _peerIdToTrackMap[instructorPeer.peerId]!,
+                                        setMirror: instructorPeer.peerId == _localPeer?.peerId,
+                                        scaleType: ScaleType.SCALE_ASPECT_FIT,
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            _getPeerColor(instructorPeer.name).withOpacity(0.6),
+                                            _getPeerColor(instructorPeer.name).withOpacity(0.3),
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          _getInitials(instructorPeer.name),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 60,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                  )
-                                else
-                                  Center(
-                                    child: CircleAvatar(
-                                      radius: 60,
-                                      backgroundColor: _getPeerColor(instructorPeer.name),
+                                  Positioned(
+                                    bottom: 8,
+                                    left: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.7),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
                                       child: Text(
-                                        _getInitials(instructorPeer.name),
+                                        instructorPeer.name,
                                         style: const TextStyle(
                                           color: Colors.white,
-                                          fontSize: 40,
-                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ),
                                   ),
-                                Positioned(
-                                  bottom: 8,
-                                  left: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.7),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      instructorPeer.name,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.7),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        instructorPeer.audioTrack?.isMute ?? true ? Icons.mic_off : Icons.mic,
+                                        color: instructorPeer.audioTrack?.isMute ?? true ? Colors.red : Colors.green,
+                                        size: 20,
                                       ),
                                     ),
                                   ),
-                                ),
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.7),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      instructorPeer.audioTrack?.isMute ?? true ? Icons.mic_off : Icons.mic,
-                                      color: instructorPeer.audioTrack?.isMute ?? true ? Colors.red : Colors.green,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         Expanded(
@@ -1393,91 +1366,103 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                               final hasVideo = videoTrack != null && !videoTrack.isMute;
                               bool isMuted = peer.isLocal ? !_isAudioOn : (peer.audioTrack?.isMute ?? true);
 
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.black,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.3),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Stack(
-                                  children: [
-                                    hasVideo
-                                        ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: HMSVideoView(
-                                        track: videoTrack,
-                                        setMirror: peer.peerId == _localPeer?.peerId,
-                                        scaleType: ScaleType.SCALE_ASPECT_BALANCED,
+                              return FadeTransition(
+                                opacity: _fadeController,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
                                       ),
-                                    )
-                                        : Center(
-                                      child: CircleAvatar(
-                                        radius: 40,
-                                        backgroundColor: _getPeerColor(peer.name),
-                                        child: Text(
-                                          _getInitials(peer.name),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 30,
-                                            fontWeight: FontWeight.bold,
+                                    ],
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      hasVideo
+                                          ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: HMSVideoView(
+                                          track: videoTrack,
+                                          setMirror: peer.peerId == _localPeer?.peerId,
+                                          scaleType: ScaleType.SCALE_ASPECT_BALANCED,
+                                        ),
+                                      )
+                                          : Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              _getPeerColor(peer.name).withOpacity(0.6),
+                                              _getPeerColor(peer.name).withOpacity(0.3),
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            _getInitials(peer.name),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 40,
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                    Positioned(
-                                      bottom: 8,
-                                      left: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.7),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Text(
-                                              peer.name,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
+                                      Positioned(
+                                        bottom: 8,
+                                        left: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withOpacity(0.7),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Text(
+                                                peer.name,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                               ),
-                                            ),
-                                            if (_raisedHands.contains(peer.peerId)) ...[
-                                              const SizedBox(width: 4),
-                                              const Icon(
-                                                Icons.pan_tool,
-                                                color: Colors.yellow,
-                                                size: 16,
-                                              ),
+                                              if (_raisedHands.contains(peer.peerId)) ...[
+                                                const SizedBox(width: 4),
+                                                const Icon(
+                                                  Icons.pan_tool,
+                                                  color: Colors.yellow,
+                                                  size: 16,
+                                                ),
+                                              ],
                                             ],
-                                          ],
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.7),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(
-                                          isMuted ? Icons.mic_off : Icons.mic,
-                                          color: isMuted ? Colors.red : Colors.green,
-                                          size: 20,
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withOpacity(0.7),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            isMuted ? Icons.mic_off : Icons.mic,
+                                            color: isMuted ? Colors.red : Colors.green,
+                                            size: 20,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               );
                             },
@@ -1486,74 +1471,88 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                       ],
                     ),
                   ),
-                  Padding(
+                  // Control Bar
+                  Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A2E),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, -2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildToggleButton(
+                          icon: _isAudioOn ? Icons.mic : Icons.mic_off,
+                          color: _isAudioOn ? Colors.green : Colors.red,
+                          onTap: _toggleAudio,
+                          isLoading: _isTogglingAudio,
+                          tooltip: _isAudioOn ? 'Mute Audio' : 'Unmute Audio',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildToggleButton(
+                          icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
+                          color: _isVideoOn ? Colors.green : Colors.red,
+                          onTap: _toggleVideo,
+                          isLoading: _isTogglingVideo,
+                          tooltip: _isVideoOn ? 'Turn Off Video' : 'Turn On Video',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildToggleButton(
+                          icon: Icons.chat,
+                          color: _unreadMessageCount > 0 ? Colors.blue : Colors.white,
+                          onTap: _openChat,
+                          isLoading: false,
+                          badgeCount: _unreadMessageCount,
+                          tooltip: 'Open Chat',
+                        ),
+                        const SizedBox(width: 12),
+                        if (!_isInstructor)
                           _buildToggleButton(
-                            icon: _isAudioOn ? Icons.mic : Icons.mic_off,
-                            color: _isAudioOn ? Colors.green : Colors.red,
-                            onTap: _toggleAudio,
-                            isLoading: _isTogglingAudio,
-                          ),
-                          const SizedBox(width: 8), // Add spacing between buttons
-                          _buildToggleButton(
-                            icon: _isVideoOn ? Icons.videocam : Icons.videocam_off,
-                            color: _isVideoOn ? Colors.green : Colors.red,
-                            onTap: _toggleVideo,
-                            isLoading: _isTogglingVideo,
-                          ),
-                          const SizedBox(width: 8),
-                          _buildToggleButton(
-                            icon: Icons.chat,
-                            color: _unreadMessageCount > 0 ? Colors.blue : Colors.white,
-                            onTap: _openChat,
+                            icon: _raisedHands.contains(_localPeer?.peerId) ? Icons.pan_tool : Icons.pan_tool_outlined,
+                            color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
+                            onTap: _toggleRaiseHand,
                             isLoading: false,
-                            badgeCount: _unreadMessageCount,
+                            tooltip: _raisedHands.contains(_localPeer?.peerId) ? 'Lower Hand' : 'Raise Hand',
                           ),
-                          const SizedBox(width: 8),
-                          if (!_isInstructor)
-                            _buildToggleButton(
-                              icon: _raisedHands.contains(_localPeer?.peerId) ? Icons.pan_tool : Icons.pan_tool_outlined,
-                              color: _raisedHands.contains(_localPeer?.peerId) ? Colors.yellow : Colors.white,
-                              onTap: _toggleRaiseHand,
-                              isLoading: false,
-                            ),
-                          if (!_isInstructor) const SizedBox(width: 8),
-                          if (_isInstructor)
-                            _buildToggleButton(
-                              icon: _isAllMuted ? Icons.volume_off : Icons.volume_up,
-                              color: _isAllMuted ? Colors.red : Colors.green,
-                              onTap: _toggleMuteAll,
-                              isLoading: false,
-                            ),
-                          if (_isInstructor) const SizedBox(width: 8),
-                          // Add Record button for instructor (NEW)
-                          if (_isInstructor)
-                            _buildToggleButton(
-                              icon: _isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
-                              color: _isRecording ? Colors.red : Colors.white,
-                              onTap: _toggleRecording,
-                              isLoading: _isTogglingRecording,
-                            ),
-                          if (_isInstructor) const SizedBox(width: 8),
-                          _buildActionButton(
-                            text: 'Leave',
-                            icon: Icons.call_end,
-                            onTap: _leaveMeeting,
+                        if (_isInstructor) ...[
+                          const SizedBox(width: 12),
+                          _buildToggleButton(
+                            icon: _isAllMuted ? Icons.volume_off : Icons.volume_up,
+                            color: _isAllMuted ? Colors.red : Colors.green,
+                            onTap: _toggleMuteAll,
                             isLoading: false,
-                            gradient: const LinearGradient(
-                              colors: [Colors.red, Colors.redAccent],
-                            ),
+                            tooltip: _isAllMuted ? 'Unmute All' : 'Mute All',
+                          ),
+                          const SizedBox(width: 12),
+                          _buildToggleButton(
+                            icon: _isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
+                            color: _isRecording ? Colors.red : Colors.white,
+                            onTap: _toggleRecording,
+                            isLoading: _isTogglingRecording,
+                            tooltip: _isRecording ? 'Stop Recording' : 'Start Recording',
                           ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ],
+              ),
+              // Floating Leave Button
+              Positioned(
+                bottom: 80,
+                right: 16,
+                child: FloatingActionButton(
+                  onPressed: _leaveMeeting,
+                  backgroundColor: Colors.red,
+                  child: const Icon(Icons.call_end, color: Colors.white),
+                  tooltip: 'Leave Meeting',
+                ),
               ),
               if (_isLoading)
                 Container(
@@ -1573,62 +1572,66 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
     required VoidCallback onTap,
     required bool isLoading,
     int? badgeCount,
+    String? tooltip,
   }) {
-    return Stack(
-      children: [
-        GestureDetector(
-          onTap: isLoading ? null : onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.3),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: isLoading
-                ? const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 2,
+    return Tooltip(
+      message: tooltip ?? '',
+      child: GestureDetector(
+        onTap: isLoading ? null : onTap,
+        child: Stack(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-            )
-                : Icon(
-              icon,
-              color: color,
-              size: 30,
-            ),
-          ),
-        ),
-        if (badgeCount != null && badgeCount > 0)
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.red,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                badgeCount.toString(),
-                style: const TextStyle(
+              child: isLoading
+                  ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
                   color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+                  strokeWidth: 2,
                 ),
+              )
+                  : Icon(
+                icon,
+                color: color,
+                size: 24,
               ),
             ),
-          ),
-      ],
+            if (badgeCount != null && badgeCount > 0)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    badgeCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1657,14 +1660,9 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (icon != null) ...[
-              Icon(
-                icon,
-                color: Colors.white,
-                size: 20,
-              ),
+              Icon(icon, color: Colors.white, size: 20),
               const SizedBox(width: 8),
             ],
             isLoading
@@ -1693,10 +1691,7 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
   Widget _buildChatBottomSheet() {
     return StatefulBuilder(
       builder: (BuildContext context, StateSetter setBottomSheetState) {
-        ({required HMSMessage message}) {
-          onMessage(message: message, updateChatUI: () => setBottomSheetState(() {}));
-        };
-
+        void updateChatUI() => setBottomSheetState(() {});
         return DraggableScrollableSheet(
           initialChildSize: 0.6,
           minChildSize: 0.3,
@@ -1707,160 +1702,292 @@ class _MeetingScreenState extends State<MeetingScreen> implements HMSUpdateListe
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF1A1A2E),
-                    Color(0xFF16213E),
-                  ],
+                  colors: [Color(0xFF1A1A2E), Color(0xFF16213E)],
                 ),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-              child: Column(
+              child: Stack(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Chat',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _chatScrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        final isMe = message.senderUsername != null && message.senderUsername == widget.username;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Row(
-                            mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-                            children: [
-                              Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: isMe ? Colors.blue.withOpacity(0.8) : Colors.white.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        isMe ? 'You' : (message.senderName ?? 'Unknown'),
-                                        style: TextStyle(
-                                          color: isMe ? Colors.white : Colors.white70,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        message.message,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        DateFormat('HH:mm').format(message.time),
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.6),
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                  Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Chat',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (_typingPeers.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          _typingPeers.length == 1 ? '${_typingPeers.length} is typing...' : '${_typingPeers.length} are typing...',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: 14,
-                            fontStyle: FontStyle.italic,
-                          ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _messageController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: 'Type a message...',
-                              hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
-                              filled: true,
-                              fillColor: Colors.white.withOpacity(0.1),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _chatScrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final message = _messages[index];
+                            final isMe = message.senderUsername != null && message.senderUsername == widget.username;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                                children: [
+                                  if (!isMe)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 8.0),
+                                      child: CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: _getPeerColor(message.senderName ?? 'Unknown'),
+                                        child: Text(
+                                          _getInitials(message.senderName ?? 'Unknown'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: isMe ? Colors.blue.withOpacity(0.8) : Colors.white.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.1),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            isMe ? 'You' : (message.senderName ?? 'Unknown'),
+                                            style: TextStyle(
+                                              color: isMe ? Colors.white : Colors.white70,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            message.message,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            DateFormat('HH:mm').format(message.time),
+                                            style: TextStyle(
+                                              color: Colors.white.withOpacity(0.6),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (isMe)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 8.0),
+                                      child: CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: _getPeerColor(widget.username),
+                                        child: Text(
+                                          _getInitials(widget.username),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            );
+                          },
+                        ),
+                      ),
+                      if (_typingPeers.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                Text(
+                                  _typingPeers.length == 1 ? 'Someone is typing' : '${_typingPeers.length} are typing',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const SizedBox(
+                                  width: 30,
+                                  height: 10,
+                                  child: TypingIndicator(),
+                                ),
+                              ],
                             ),
-                            onChanged: (value) {
-                              if (value.trim().isNotEmpty) {
-                                _sendTypingEvent();
-                              }
-                            },
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          onTap: () => _sendMessage(() => setBottomSheetState(() {})),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Colors.blue, Colors.blueAccent],
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _messageController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  hintText: 'Type a message...',
+                                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+                                  filled: true,
+                                  fillColor: Colors.white.withOpacity(0.1),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                ),
+                                onChanged: (value) {
+                                  if (value.trim().isNotEmpty) {
+                                    _sendTypingEvent();
+                                  }
+                                },
                               ),
-                              borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Icon(
-                              Icons.send,
-                              color: Colors.white,
-                              size: 24,
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => _sendMessage(() => setBottomSheetState(() {})),
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Colors.blue, Colors.blueAccent],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.send,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
+                  if (_showScrollToBottom)
+                    Positioned(
+                      bottom: 80,
+                      right: 16,
+                      child: FloatingActionButton(
+                        mini: true,
+                        backgroundColor: Colors.blue,
+                        onPressed: () {
+                          _chatScrollController.animateTo(
+                            _chatScrollController.position.maxScrollExtent,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                          );
+                        },
+                        child: const Icon(Icons.arrow_downward, color: Colors.white),
+                      ),
+                    ),
                 ],
               ),
             );
           },
         );
       },
+    );
+  }
+}
+
+// Typing Indicator Widget
+class TypingIndicator extends StatefulWidget {
+  const TypingIndicator({Key? key}) : super(key: key);
+
+  @override
+  _TypingIndicatorState createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<TypingIndicator> with TickerProviderStateMixin {
+  late AnimationController _controller;
+  late List<Animation<double>> _dotAnimations;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    )..repeat();
+    _dotAnimations = List.generate(3, (index) {
+      return Tween<double>(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: Interval(
+            0.2 * index,
+            0.2 * (index + 1),
+            curve: Curves.easeInOut,
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: List.generate(3, (index) {
+        return AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(0, -5 * _dotAnimations[index].value),
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.7),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            );
+          },
+        );
+      }),
     );
   }
 }

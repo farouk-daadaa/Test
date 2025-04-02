@@ -131,6 +131,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
             hmsSDK: _hmsSDK!,
             meetingToken: meetingToken,
             username: username,
+
           ),
         ),
       );
@@ -238,6 +239,25 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
   void onSessionStoreAvailable({HMSSessionStore? hmsSessionStore}) {
     print('Session store available: ${hmsSessionStore != null ? "Initialized" : "Not initialized"}');
   }
+  // Helper method to validate the session title
+  bool _isValidSessionTitle(String title) {
+    final RegExp regex = RegExp(r'^[a-zA-Z0-9.:_-]+$');
+    return regex.hasMatch(title);
+  }
+
+// Helper method to sanitize the session title
+  String _sanitizeSessionTitle(String title) {
+    if (title.isEmpty) {
+      return 'session-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    // Replace invalid characters with underscores
+    String sanitized = title.replaceAll(RegExp(r'[^a-zA-Z0-9.:_-]'), '_');
+    // Ensure the title is not empty after sanitization
+    if (sanitized.isEmpty) {
+      return 'session-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return sanitized;
+  }
 
   void _showSessionForm({SessionDTO? session}) {
     _editingSession = session;
@@ -285,7 +305,20 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
                         filled: true,
                         fillColor: Colors.grey[50],
                       ),
-                      validator: (value) => value!.isEmpty ? 'Title is required' : null,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Title is required';
+                        }
+                        if (!_isValidSessionTitle(value)) {
+                          return 'Only letters, numbers, and . - : _ are allowed';
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        setDialogState(() {
+                          _title = value;
+                        });
+                      },
                       onSaved: (value) => _title = value!,
                     ),
                     const SizedBox(height: 16),
@@ -523,9 +556,13 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
         return;
       }
       _formKey.currentState!.save();
+
+      // Sanitize the title before sending to the backend
+      final sanitizedTitle = _sanitizeSessionTitle(_title);
+
       final session = SessionDTO(
         id: _editingSession?.id,
-        title: _title,
+        title: sanitizedTitle, // Use the sanitized title
         description: _description,
         startTime: _startTime!,
         endTime: _endTime!,
@@ -564,9 +601,14 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
         _fetchSessions();
         Navigator.pop(context);
       } catch (e) {
+        // Improved error handling to display specific backend error messages
+        String errorMessage = 'Error: $e';
+        if (e.toString().contains('Invalid body param')) {
+          errorMessage = 'Failed to create session: Invalid title. Only letters, numbers, and . - : _ are allowed.';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
