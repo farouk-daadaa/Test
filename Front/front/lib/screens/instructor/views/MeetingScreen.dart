@@ -67,6 +67,7 @@ class MeetingScreen extends StatefulWidget {
   final bool initialAudioOn;
   final String meetingToken;
   final String username;
+  final String sessionTitle;
 
   const MeetingScreen({
     Key? key,
@@ -77,6 +78,7 @@ class MeetingScreen extends StatefulWidget {
     required this.initialAudioOn,
     required this.meetingToken,
     required this.username,
+    required this.sessionTitle,
   }) : super(key: key);
 
   @override
@@ -522,6 +524,7 @@ class _MeetingScreenState extends State<MeetingScreen> with TickerProviderStateM
           hmsSDK: widget.hmsSDK,
           meetingToken: widget.meetingToken,
           username: widget.username,
+          sessionTitle: widget.sessionTitle,
         ),
       ),
     );
@@ -1172,7 +1175,7 @@ class _MeetingScreenState extends State<MeetingScreen> with TickerProviderStateM
                             children: [
                               Flexible(
                                 child: Text(
-                                  'Live Meeting Room',
+                                  widget.sessionTitle,
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,

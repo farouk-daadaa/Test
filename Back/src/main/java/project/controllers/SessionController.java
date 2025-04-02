@@ -170,6 +170,7 @@ public class SessionController {
         response.put("meetingLink", session.getMeetingLink());
         response.put("meetingToken", meetingToken);
         response.put("roomId", roomId); // Include roomId for clarity in the client
+        response.put("title", session.getTitle());
 
         return ResponseEntity.ok(response);
     }
