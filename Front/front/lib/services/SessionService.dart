@@ -83,6 +83,25 @@ class SessionService {
     }
   }
 
+  Future<List<SessionDTO>> getAvailableSessions(int studentId, {String? status}) async {
+    try {
+      final response = await _dio.get(
+        '/api/sessions/student/$studentId${status != null ? "?status=$status" : ""}',
+      );
+      print('Available Sessions Response: ${response.data}');
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((json) => SessionDTO.fromJson(json))
+            .toList();
+      }
+      throw Exception('Failed to load available sessions: ${response.statusCode} - ${response.statusMessage}');
+    } on DioException catch (e) {
+      print('Dio Error: ${e.response?.data}');
+      throw Exception(
+          'Failed to load available sessions: ${e.response?.statusCode} - ${e.response?.data['message'] ?? e.message}');
+    }
+  }
+
   Future<Map<String, dynamic>> getSessionJoinDetails(int sessionId) async {
     try {
       final response = await _dio.get(

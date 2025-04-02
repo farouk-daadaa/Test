@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/all_instructors_screen.dart';
 import 'package:front/screens/homepage/views/instructor_profile_screen.dart';
+import 'package:hmssdk_flutter/hmssdk_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
@@ -13,6 +15,8 @@ import '../../services/enrollment_service.dart';
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/instructor_service.dart';
+import '../../services/SessionService.dart'; // Added SessionService import
+import '../instructor/views/LobbyScreen.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
 import 'course_card.dart';
@@ -72,10 +76,7 @@ class SearchResultsScreen extends StatelessWidget {
                 arguments: {
                   'courseId': course.id,
                   'onEnrollmentChanged': () async {
-                    final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                    if (token != null) {
-                      // Refresh will handle this now
-                    }
+                    // Refresh will handle this now
                   },
                   'onLessonCompleted': (EnrollmentDTO updatedEnrollment) {
                     // Refresh will handle this now
@@ -114,13 +115,16 @@ class _HomeScreenState extends State<HomeScreen> {
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   final ImageService imageService = ImageService();
+  final SessionService sessionService = SessionService(baseUrl: 'http://192.168.1.13:8080'); // Initialize SessionService
   late AuthService _authService;
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
   List<CourseDTO> _featuredCourses = [];
   List<Map<String, dynamic>> _topInstructors = []; // {name: String, id: int}
-  Map<String, Uint8List?> _instructorImages = {}; // Restored this
+  Map<String, Uint8List?> _instructorImages = {};
   List<Map<String, dynamic>> _categories = [];
+  List<SessionDTO> _availableSessions = []; // Store available live sessions
+  Map<int, String> _instructorNames = {}; // New map for instructor names
 
   // Search-related variables (unchanged)
   final TextEditingController _searchController = TextEditingController();
@@ -154,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
       imageService.setToken(token);
+      sessionService.setToken(token); // Set token for SessionService
       _authService = authService;
       await _refreshAllData(token); // Initial load
     }
@@ -168,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _fetchFeaturedCourses(token),
       _fetchTopInstructors(token, context),
       _fetchCategories(token),
+      _fetchAvailableSessions(token), // Fetch live sessions
     ]);
   }
 
@@ -268,7 +274,6 @@ class _HomeScreenState extends State<HomeScreen> {
     imageService.setToken(token);
 
     try {
-      // Get the userId from instructorId
       final userId = await instructorService.getUserIdByInstructorId(instructorId);
       if (userId == null) {
         print('No userId found for instructor: $instructorName (instructorId: $instructorId)');
@@ -276,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       print('Fetching image for instructor: $instructorName, userId: $userId');
-      final imageBytes = await imageService.getUserImage(context, userId); // Context still needed for Provider, but token is set
+      final imageBytes = await imageService.getUserImage(context, userId);
       if (imageBytes != null && imageBytes.isNotEmpty) {
         setState(() {
           _instructorImages[instructorName] = imageBytes;
@@ -289,12 +294,45 @@ class _HomeScreenState extends State<HomeScreen> {
       print('Error fetching image for instructor $instructorName (instructorId: $instructorId): $e');
     }
   }
+
   Future<void> _fetchCategories(String token) async {
     final adminService = Provider.of<AdminService>(context, listen: false);
     final categories = await adminService.getAllCategories();
     setState(() {
       _categories = categories;
     });
+  }
+
+  // Fetch available live sessions for the student
+  Future<void> _fetchAvailableSessions(String token) async {
+    sessionService.setToken(token);
+    final instructorService = InstructorService()..setToken(token); // Initialize InstructorService
+    try {
+      final userId = await _authService.getUserIdByUsername(_authService.username ?? '');
+      if (userId != null) {
+        final sessions = await sessionService.getAvailableSessions(userId, status: 'LIVE');
+        // Fetch instructor names for each session
+        for (var session in sessions) {
+          if (session.instructorId != null && !_instructorNames.containsKey(session.instructorId)) {
+            final profile = await instructorService.getInstructorProfile(session.instructorId!);
+            _instructorNames[session.instructorId!] = profile?.username ?? 'Unknown';
+          }
+        }
+        setState(() {
+          _availableSessions = sessions;
+        });
+      } else {
+        throw Exception('User ID not found');
+      }
+    } catch (e) {
+      print('Error fetching available sessions: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load live sessions: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void updateEnrollment(EnrollmentDTO updatedEnrollment) {
@@ -609,7 +647,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   Column(
                     children: [
                       _buildContinueLearning(),
-                      const SizedBox(height: 80),
+                      const SizedBox(height: 20), // Space between sections
+                      _buildLiveSessions(), // New Live Sessions section
+                      const SizedBox(height: 80), // Bottom padding
                     ],
                   ),
               ],
@@ -947,6 +987,280 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // New Live Sessions section
+  Widget _buildLiveSessions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Live Sessions',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('See all sessions coming soon!')),
+                  );
+                },
+                child: Text(
+                  'See all',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _availableSessions.isEmpty
+              ? Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.videocam_off,
+                    color: AppColors.textGray.withOpacity(0.7),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'No live sessions right now',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textGray,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _availableSessions.length > 3 ? 3 : _availableSessions.length,
+            itemBuilder: (context, index) {
+              final session = _availableSessions[index];
+              final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
+              final now = DateTime.now();
+              final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime);
+
+              if (!isLive) return const SizedBox.shrink(); // Only show LIVE sessions
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12),
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              session.title,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                                color: Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.red),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.live_tv,
+                                  size: 14,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'LIVE',
+                                  style: TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Content
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (session.description != null && session.description!.isNotEmpty)
+                            Text(
+                              session.description!,
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 14,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          if (session.description != null && session.description!.isNotEmpty)
+                            const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.calendar_today,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                DateFormat('EEEE, MMM d, yyyy').format(session.startTime),
+                                style: TextStyle(
+                                  color: Colors.grey[800],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${DateFormat('h:mm a').format(session.startTime.toLocal())} - '
+                                    '${DateFormat('h:mm a').format(session.endTime.toLocal())}',
+                                style: TextStyle(
+                                  color: Colors.grey[800],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                session.isFollowerOnly == true ? Icons.people : Icons.public,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                session.isFollowerOnly == true ? 'Followers Only' : 'Public Session',
+                                style: TextStyle(
+                                  color: Colors.grey[800],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  await _joinSession(session);
+                                },
+                                icon: const Icon(Icons.video_call),
+                                label: const Text('Join Live'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.green,
+                                  side: const BorderSide(color: Colors.green),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+// Helper method (unchanged from previous suggestion)
+  Future<void> _joinSession(SessionDTO session) async {
+    try {
+      final joinDetails = await sessionService.getSessionJoinDetails(session.id!);
+      final hmsSDK = HMSSDK();
+      await hmsSDK.build();
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LobbyScreen(
+            hmsSDK: hmsSDK,
+            meetingToken: joinDetails['meetingToken'],
+            username: _authService.username ?? 'Student',
+            sessionTitle: session.title,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to join session: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<List<CourseDTO>> _getCoursesWithToken() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
@@ -1014,18 +1328,18 @@ class _HomeScreenState extends State<HomeScreen> {
               final instructorName = instructor['name'] as String;
               final instructorId = instructor['id'] as int;
               return GestureDetector(
-                  onTap: () {
-                    print('Navigating to profile for instructorId: $instructorId, name: $instructorName');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => InstructorProfileScreen(
-                          instructorId: instructorId,
-                          instructorName: instructorName,
-                        ),
+                onTap: () {
+                  print('Navigating to profile for instructorId: $instructorId, name: $instructorName');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => InstructorProfileScreen(
+                        instructorId: instructorId,
+                        instructorName: instructorName,
                       ),
-                    );
-                  },
+                    ),
+                  );
+                },
                 child: Padding(
                   padding: const EdgeInsets.only(right: 16),
                   child: Column(
