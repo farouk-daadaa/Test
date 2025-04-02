@@ -8,12 +8,14 @@ class LobbyScreen extends StatefulWidget {
   final HMSSDK hmsSDK;
   final String meetingToken;
   final String username;
+  final String sessionTitle;
 
   const LobbyScreen({
     Key? key,
     required this.hmsSDK,
     required this.meetingToken,
     required this.username,
+    required this.sessionTitle,
   }) : super(key: key);
 
   @override
@@ -145,6 +147,7 @@ class _LobbyScreenState extends State<LobbyScreen> implements HMSPreviewListener
               initialAudioOn: _isAudioOn,
               meetingToken: widget.meetingToken,
               username: widget.username,
+              sessionTitle: widget.sessionTitle,
             ),
           ),
         );

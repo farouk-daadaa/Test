@@ -93,7 +93,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
     setState(() => _isLoading = false);
   }
 
-  Future<void> _navigateToLobby(String meetingToken, String username) async {
+  Future<void> _navigateToLobby(String meetingToken, String username, String sessionTitle) async {
     try {
       // Request permissions
       Map<Permission, PermissionStatus> statuses = await [
@@ -123,7 +123,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
       _hmsSDK?.leave();
       _initializeHMSSDK();
 
-      // Navigate to LobbyScreen
+      // Navigate to LobbyScreen with the session title
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -131,7 +131,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
             hmsSDK: _hmsSDK!,
             meetingToken: meetingToken,
             username: username,
-
+            sessionTitle: sessionTitle, // Pass the session title
           ),
         ),
       );
@@ -992,6 +992,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
                                   final sessionDetails = await _sessionService.getSessionJoinDetails(session.id!);
                                   print('Session Join Details: $sessionDetails');
                                   final meetingToken = sessionDetails["meetingToken"] as String?;
+                                  final sessionTitle = sessionDetails["title"] as String? ?? session.title;
 
                                   if (meetingToken == null) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1004,7 +1005,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
                                   }
 
                                   // Navigate to LobbyScreen
-                                  await _navigateToLobby(meetingToken, authService.username ?? 'Instructor');
+                                  await _navigateToLobby(meetingToken, authService.username ?? 'Instructor',sessionTitle);
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
