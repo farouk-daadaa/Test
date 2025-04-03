@@ -3,6 +3,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/all_instructors_screen.dart';
+import 'package:front/screens/homepage/views/all_sessions_screen.dart';
 import 'package:front/screens/homepage/views/instructor_profile_screen.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'package:intl/intl.dart';
@@ -998,7 +999,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Live Sessions',
+                'Live & Upcoming Sessions',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -1007,8 +1008,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               TextButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('See all sessions coming soon!')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AllSessionsScreen()),
                   );
                 },
                 child: Text(
@@ -1041,7 +1043,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'No live sessions right now',
+                    'No live or upcoming sessions',
                     style: TextStyle(
                       fontSize: 16,
                       color: AppColors.textGray,
@@ -1060,9 +1062,22 @@ class _HomeScreenState extends State<HomeScreen> {
               final session = _availableSessions[index];
               final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
               final now = DateTime.now();
-              final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime);
+              final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime.add(Duration(minutes: 1))); // Add buffer for short sessions
+              final isUpcoming = now.isBefore(session.startTime);
+              final isEnded = now.isAfter(session.endTime);
 
-              if (!isLive) return const SizedBox.shrink(); // Only show LIVE sessions
+              // Debug print to check session status
+              print('Session: ${session.title}, Start: ${session.startTime}, End: ${session.endTime}, isLive: $isLive, isUpcoming: $isUpcoming, isEnded: $isEnded');
+
+              // Skip ENDED sessions
+              if (isEnded) return const SizedBox.shrink();
+
+              // Skip if neither LIVE nor UPCOMING (shouldn't happen, but for safety)
+              if (!isLive && !isUpcoming) return const SizedBox.shrink();
+
+              // Determine status and color
+              final status = isLive ? 'LIVE' : 'UPCOMING';
+              final statusColor = isLive ? Colors.red : Colors.orange;
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -1101,23 +1116,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: statusColor.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.red),
+                              border: Border.all(color: statusColor),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
-                                  Icons.live_tv,
+                                Icon(
+                                  isLive ? Icons.live_tv : Icons.upcoming,
                                   size: 14,
-                                  color: Colors.red,
+                                  color: statusColor,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'LIVE',
+                                  status,
                                   style: TextStyle(
-                                    color: Colors.red,
+                                    color: statusColor,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -1201,26 +1216,27 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  await _joinSession(session);
-                                },
-                                icon: const Icon(Icons.video_call),
-                                label: const Text('Join Live'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.green,
-                                  side: const BorderSide(color: Colors.green),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                          if (isLive) // Show "Join Live" only for LIVE sessions
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    await _joinSession(session);
+                                  },
+                                  icon: const Icon(Icons.video_call),
+                                  label: const Text('Join Live'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.green,
+                                    side: const BorderSide(color: Colors.green),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
                         ],
                       ),
                     ),

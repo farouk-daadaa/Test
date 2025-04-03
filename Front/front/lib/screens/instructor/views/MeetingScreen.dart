@@ -533,7 +533,15 @@ class _MeetingScreenState extends State<MeetingScreen> with TickerProviderStateM
   void _exitToMySessions() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('join_time_${widget.meetingToken}');
-    Navigator.pushNamedAndRemoveUntil(context, '/my_sessions', (Route<dynamic> route) => false);
+
+    // Role-based navigation
+    if (_isInstructor) {
+      // Instructor: Navigate to MySessionsView
+      Navigator.pushNamedAndRemoveUntil(context, '/my_sessions', (Route<dynamic> route) => false);
+    } else {
+      // Student: Navigate to HomeScreen
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (Route<dynamic> route) => false);
+    }
   }
 
   void _showParticipantsList() {
