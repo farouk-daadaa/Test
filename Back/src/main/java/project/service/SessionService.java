@@ -33,6 +33,9 @@ public class SessionService {
     @Autowired
     private UserSecurity userSecurity;
 
+    @Autowired
+    private NotificationService notificationService;
+
     public SessionResponseDTO createSession(SessionRequestDTO sessionRequestDTO, Authentication authentication, String meetingLink) {
         String username = authentication.getName();
         Instructor instructor = userRepository.findByUsername(username)
@@ -63,6 +66,7 @@ public class SessionService {
         session.setEndTime(newEndTime);
         session.setIsFollowerOnly(sessionRequestDTO.getIsFollowerOnly());
         session.setInstructor(instructor);
+        session.setMeetingLink(meetingLink);
         Session savedSession = sessionRepository.save(session);
         return SessionResponseDTO.fromEntity(savedSession);
     }

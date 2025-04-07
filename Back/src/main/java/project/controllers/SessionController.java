@@ -2,6 +2,9 @@ package project.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -12,18 +15,16 @@ import org.springframework.web.client.RestTemplate;
 import project.dto.SessionRequestDTO;
 import project.dto.SessionResponseDTO;
 import project.exception.AccessDeniedException;
-import project.models.Instructor;
-import project.models.Session;
-import project.models.UserEntity;
+import project.models.*;
+import project.repository.InstructorRepository;
 import project.repository.SessionRepository;
 import project.repository.UserRepository;
 import project.security.HmsTokenService;
 import project.service.SessionService;
+import project.service.NotificationService;
 
 import javax.validation.Valid;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -38,10 +39,16 @@ public class SessionController {
     private UserRepository userRepository;
 
     @Autowired
+    private InstructorRepository instructorRepository ;
+
+    @Autowired
     private SessionRepository sessionRepository;
 
     @Autowired
     private HmsTokenService hmsTokenService;
+
+    @Autowired
+    private NotificationService notificationService;
 
     @Value("${hms.room.endpoint}")
     private String HMS_ROOM_ENDPOINT;
@@ -60,30 +67,65 @@ public class SessionController {
             @Valid @RequestBody SessionRequestDTO sessionRequestDTO,
             Authentication authentication) {
 
-        // Create the session in the database
-        SessionResponseDTO responseDTO = sessionService.createSession(sessionRequestDTO, authentication, null);
-
-        // Create a new room in 100ms
+        // Create a new room in 100ms first
         String roomId;
         try {
             roomId = createHmsRoom(sessionRequestDTO.getTitle());
         } catch (Exception e) {
             throw new RuntimeException("Failed to create 100ms room: " + e.getMessage());
         }
+        String meetingLink = "room://" + roomId;
 
-        // Update session with the new room_id
+        // Create the session in the database with the meeting link
+        SessionResponseDTO responseDTO = sessionService.createSession(sessionRequestDTO, authentication, meetingLink);
+
+        // Fetch the saved session
         Session session = sessionRepository.findById(responseDTO.getId())
                 .orElseThrow(() -> new IllegalStateException("Session not found after creation: " + responseDTO.getId()));
-        session.setMeetingLink("room://" + roomId);
-        sessionRepository.save(session);
-        responseDTO.setMeetingLink("room://" + roomId); // Update the DTO
 
-        // Return session details (no token yet, generated on join)
+        // Determine who to notify based on session type
+        Instructor instructor = session.getInstructor();
+        List<Long> userIdsToNotify;
+
+        if (session.isFollowerOnly()) {
+            // Notify only followers for follower-only sessions, using pagination
+            userIdsToNotify = new ArrayList<>();
+            int pageSize = 100;
+            Pageable pageable = PageRequest.of(0, pageSize);
+            Page<UserEntity> followerPage;
+
+            do {
+                followerPage = instructorRepository.findFollowersById(instructor.getId(), pageable);
+                List<Long> batchUserIds = followerPage.getContent().stream()
+                        .map(UserEntity::getId)
+                        .collect(Collectors.toList());
+                userIdsToNotify.addAll(batchUserIds);
+                pageable = pageable.next();
+            } while (followerPage.hasNext());
+        } else {
+            // Notify all students for public sessions (pass an empty list to trigger pagination)
+            userIdsToNotify = Collections.emptyList();
+        }
+
+        // Notify the selected users
+        String notificationTitle = "New Session: " + session.getTitle();
+        String notificationMessage = "Instructor " + instructor.getUser().getUsername() + " has scheduled a new session on " +
+                session.getStartTime() + ". " + (session.isFollowerOnly() ? "This is follower-only." : "Open to all.") +
+                " Join here: " + meetingLink;
+
+        notificationService.createNotificationsWithPagination(
+                userIdsToNotify,
+                notificationTitle,
+                notificationMessage,
+                Notification.NotificationType.SESSION
+        );
+
+        // Return session details
         Map<String, Object> response = new HashMap<>();
         response.put("session", responseDTO);
-
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
+
 
     // Helper method to create a room in 100ms
     private String createHmsRoom(String sessionTitle) {
