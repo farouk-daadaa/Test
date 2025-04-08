@@ -3,9 +3,11 @@ package project.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import project.models.Instructor;
+import project.models.Notification;
 import project.models.UserEntity;
 import project.repository.InstructorRepository;
 import project.repository.UserRepository;
+import javax.transaction.Transactional;
 
 import java.util.List;
 
@@ -18,15 +20,42 @@ public class FollowService {
     @Autowired
     private InstructorRepository instructorRepository;
 
+    @Autowired
+    private NotificationService notificationService; // Inject NotificationService
+
+    @Transactional(rollbackOn = Exception.class)
     public void followInstructor(Long userId, Long instructorId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found: " + userId));
         Instructor instructor = instructorRepository.findById(instructorId)
                 .orElseThrow(() -> new IllegalStateException("Instructor not found: " + instructorId));
+
         if (!instructor.getFollowers().contains(user)) {
+            // Add the user to the instructor's followers
             instructor.getFollowers().add(user);
             user.getFollowedInstructors().add(instructor);
+
+            // Save the follow relationship first
             instructorRepository.save(instructor);
+
+            // Ensure the instructor has an associated user
+            UserEntity instructorUser = instructor.getUser();
+            if (instructorUser == null) {
+                throw new IllegalStateException("Instructor with ID " + instructorId + " is not associated with a user");
+            }
+
+            // Prevent self-follow notifications
+            if (!instructorUser.getId().equals(userId)) {
+                // Create a notification for the instructor
+                String title = "New Follower";
+                String message = String.format("You have a new follower: %s", user.getUsername());
+                notificationService.createNotification(
+                        instructorUser.getId(),
+                        title,
+                        message,
+                        Notification.NotificationType.FOLLOWERS
+                );
+            }
         }
     }
 
