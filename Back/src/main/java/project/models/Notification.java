@@ -37,7 +37,7 @@ public class Notification {
     private NotificationType type;
 
     public enum NotificationType {
-        SESSION, COURSE, SYSTEM, FOLLOWERS, REVIEW // Placeholder types, adjust based on your needs
+        SESSION, COURSE, SYSTEM, FOLLOWERS, REVIEW
     }
 
     @PrePersist

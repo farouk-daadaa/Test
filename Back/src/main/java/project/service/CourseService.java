@@ -44,6 +44,12 @@ public class CourseService {
     @Autowired
     private CourseCategoryRepository courseCategoryRepository;
 
+    @Autowired
+    private FollowService followService; // Inject FollowService to get followers
+
+    @Autowired
+    private NotificationService notificationService; // Inject NotificationService to send notifications
+
     public CourseDTO createCourse(CourseDTO courseDTO, Long categoryId, String username, MultipartFile image) throws IOException {
         UserEntity user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -76,7 +82,40 @@ public class CourseService {
         handlePricingAndPrice(course);
 
         Course savedCourse = courseRepository.save(course);
+
+        // Notify the instructor's followers about the new course
+        notifyFollowersOfNewCourse(instructor, savedCourse);
+
         return CourseDTO.fromEntity(savedCourse);
+    }
+
+    private void notifyFollowersOfNewCourse(Instructor instructor, Course course) {
+        // Get the list of followers
+        List<UserEntity> followers = followService.getFollowers(instructor.getId());
+        if (followers.isEmpty()) {
+            return; // No followers to notify
+        }
+
+        // Prepare the list of follower user IDs
+        List<Long> followerIds = followers.stream()
+                .map(UserEntity::getId)
+                .collect(Collectors.toList());
+
+        // Create the notification message
+        String title = "New Course Published";
+        String message = String.format(
+                "Instructor %s has published a new course: '%s'. Check it out!",
+                instructor.getUser().getUsername(),
+                course.getTitle()
+        );
+
+        // Use NotificationService to send notifications to followers
+        notificationService.createNotificationsWithPagination(
+                followerIds,
+                title,
+                message,
+                Notification.NotificationType.COURSE
+        );
     }
 
     public CourseDTO updateCourse(Long id, CourseDTO courseDTO, Long categoryId, MultipartFile image) throws IOException {
@@ -192,7 +231,7 @@ public class CourseService {
 
     public List<CourseDTO> getCoursesByInstructorId(Long instructorId) {
         return courseRepository.findByInstructorId(instructorId).stream()
-                .map(CourseDTO::fromEntity) // Fixed to use fromEntity
+                .map(CourseDTO::fromEntity)
                 .collect(Collectors.toList());
     }
 }
