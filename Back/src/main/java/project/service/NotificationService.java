@@ -66,15 +66,15 @@ public class NotificationService {
     }
 
     @Transactional
-    public void createNotificationsWithPagination(List<Long> userIds, String title, String message, Notification.NotificationType type) {
-        logger.info("Creating notifications for {} users (with pagination)", userIds.size());
+    public void createNotificationsWithPagination(List<Long> userIds, String title, String message, Notification.NotificationType type, UserRoleName roleFilter) {
+        logger.info("Creating notifications for {} users (with pagination) with role {}", userIds.size(), roleFilter);
 
         if (!userIds.isEmpty()) {
             int pageSize = 100;
             for (int i = 0; i < userIds.size(); i += pageSize) {
                 List<Long> batchUserIds = userIds.subList(i, Math.min(i + pageSize, userIds.size()));
                 List<UserEntity> users = userRepository.findAllById(batchUserIds).stream()
-                        .filter(user -> user.getUserRole() != null && user.getUserRole().getUserRoleName() == UserRoleName.USER)
+                        .filter(user -> user.getUserRole() != null && user.getUserRole().getUserRoleName() == roleFilter)
                         .collect(Collectors.toList());
                 createNotificationBatch(users, title, message, type);
             }
@@ -84,12 +84,18 @@ public class NotificationService {
             Page<UserEntity> userPage;
 
             do {
-                userPage = userRepository.findByUserRole_UserRoleName(UserRoleName.USER, pageable);
+                userPage = userRepository.findByUserRole_UserRoleName(roleFilter, pageable);
                 List<UserEntity> users = userPage.getContent();
                 createNotificationBatch(users, title, message, type);
                 pageable = pageable.next();
             } while (userPage.hasNext());
         }
+    }
+
+    // Overload for backward compatibility (default to USER role)
+    @Transactional
+    public void createNotificationsWithPagination(List<Long> userIds, String title, String message, Notification.NotificationType type) {
+        createNotificationsWithPagination(userIds, title, message, type, UserRoleName.USER);
     }
 
     private void createNotificationBatch(List<UserEntity> users, String title, String message, Notification.NotificationType type) {
