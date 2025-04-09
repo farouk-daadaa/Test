@@ -8,6 +8,7 @@ import project.dto.NotificationDTO;
 import project.models.Notification;
 import project.models.UserEntity;
 import project.repository.UserRepository;
+import project.service.NotificationCleanupService;
 import project.service.NotificationService;
 
 import java.util.List;
@@ -16,6 +17,9 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {
+
+    @Autowired
+    private NotificationCleanupService cleanupService;
 
     @Autowired
     private NotificationService notificationService;
@@ -55,4 +59,23 @@ public class NotificationController {
         notificationService.markAsRead(notificationId, user.getId());
         return ResponseEntity.noContent().build();
     }
+
+    @DeleteMapping("/{notificationId}")
+    public ResponseEntity<Void> deleteNotification(
+            @PathVariable Long notificationId,
+            Authentication authentication) {
+        String username = authentication.getName();
+        UserEntity user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("User not found: " + username));
+
+        notificationService.deleteNotification(notificationId, user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/cleanup-notifications")
+    public ResponseEntity<String> triggerCleanup() {
+        cleanupService.deleteExpiredNotifications();
+        return ResponseEntity.ok("Cleanup triggered");
+    }
+
 }
