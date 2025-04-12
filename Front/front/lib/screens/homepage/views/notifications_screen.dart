@@ -12,6 +12,8 @@ class NotificationsScreen extends StatelessWidget {
     final notificationService = Provider.of<NotificationService>(context);
     final authService = Provider.of<AuthService>(context);
 
+    print('NotificationsScreen rebuilt with ${notificationService.notifications.length} notifications');
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
@@ -116,7 +118,6 @@ class NotificationCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            // Icon based on notification type
             Icon(
               _getIconForType(notification.type),
               color: notification.isRead ? Colors.grey : AppColors.primary,
@@ -151,7 +152,6 @@ class NotificationCard extends StatelessWidget {
                 ],
               ),
             ),
-            // Actions
             PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'mark_as_read') {

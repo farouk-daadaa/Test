@@ -172,6 +172,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // Set token for NotificationService
       _notificationService.setToken(token);
 
+      // Reset the disposal state of NotificationService
+      _notificationService.resetDisposalState();
+
       // Fetch user ID for notifications
       final username = authService.username;
       if (username != null) {

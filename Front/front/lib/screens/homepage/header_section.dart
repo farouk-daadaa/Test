@@ -11,7 +11,9 @@ class HeaderSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: true);
-    final notificationService = Provider.of<NotificationService>(context); // Access NotificationService
+    final notificationService = Provider.of<NotificationService>(context);
+
+    print('HeaderSection rebuilt with unreadCount: ${notificationService.unreadCount}');
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -60,7 +62,6 @@ class HeaderSection extends StatelessWidget {
                       size: 28,
                     ),
                     onPressed: () {
-                      // Navigate to NotificationsScreen when the icon is tapped
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -69,7 +70,6 @@ class HeaderSection extends StatelessWidget {
                       );
                     },
                   ),
-                  // Show badge if there are unread notifications
                   if (notificationService.unreadCount > 0)
                     Positioned(
                       right: 8,

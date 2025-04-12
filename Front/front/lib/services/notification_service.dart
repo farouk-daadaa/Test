@@ -61,7 +61,7 @@ class NotificationService with ChangeNotifier {
   List<NotificationDTO> _notifications = [];
   List<NotificationDTO> _unreadNotifications = [];
   bool _isConnected = false;
-  bool _isDisposing = false; // Add flag to track disposal state
+  bool _isDisposing = false;
 
   List<NotificationDTO> get notifications => _notifications;
   List<NotificationDTO> get unreadNotifications => _unreadNotifications;
@@ -78,11 +78,15 @@ class NotificationService with ChangeNotifier {
     _dio.options.headers['Authorization'] = 'Bearer $token';
   }
 
-  // Initialize WebSocket connection
   Future<void> initializeWebSocket(String userId, String token) async {
     if (_stompClient != null && _stompClient!.connected) {
+      print('WebSocket already connected for user $userId');
       return; // Already connected
     }
+
+    // Reset _isDisposing when reinitializing WebSocket
+    _isDisposing = false;
+    print('Reset _isDisposing to false for user $userId');
 
     _stompClient = StompClient(
       config: StompConfig(
@@ -94,14 +98,18 @@ class NotificationService with ChangeNotifier {
             destination: '/topic/notifications/$userId',
             callback: (StompFrame frame) {
               try {
-                final notificationJson = frame.body != null ? frame.body! : '{}';
-                print('Raw WebSocket message: $notificationJson');
+                final notificationJson = frame.body ?? '{}';
+                print('Received WebSocket message: $notificationJson');
+
                 final notificationData = jsonDecode(notificationJson);
+                print('Parsed WebSocket message: $notificationData');
 
                 List<Map<String, dynamic>> notificationList;
                 if (notificationData is List) {
+                  print('Message is a list of notifications');
                   notificationList = List<Map<String, dynamic>>.from(notificationData);
                 } else if (notificationData is Map<String, dynamic>) {
+                  print('Message is a single notification');
                   notificationList = [notificationData];
                 } else {
                   print('Unexpected WebSocket message format: $notificationData');
@@ -109,31 +117,39 @@ class NotificationService with ChangeNotifier {
                 }
 
                 for (var data in notificationList) {
+                  print('Processing notification: $data');
                   final newNotification = NotificationDTO.fromJson(data);
+                  print('Parsed notification: ${newNotification.toJson()}');
                   _notifications.insert(0, newNotification);
                   if (!newNotification.isRead) {
                     _unreadNotifications.insert(0, newNotification);
                   }
-                  print('Processed WebSocket notification: ${newNotification.toJson()}');
+                  print('Updated notifications: ${_notifications.length}, unread: ${_unreadNotifications.length}');
                 }
+
                 if (!_isDisposing) {
+                  print('Notifying listeners of new notifications');
                   notifyListeners();
+                } else {
+                  print('Skipping notifyListeners because _isDisposing is true');
                 }
               } catch (e) {
                 print('Error processing WebSocket message: $e');
+                print('Frame body: ${frame.body}');
               }
             },
           );
           if (!_isDisposing) {
+            print('Notifying listeners of WebSocket connection');
             notifyListeners();
           }
         },
         beforeConnect: () async {
-          print('Connecting to WebSocket...');
+          print('Connecting to WebSocket for user $userId...');
         },
         onWebSocketError: (dynamic error) {
           _isConnected = false;
-          print('WebSocket error: $error');
+          print('WebSocket error for user $userId: $error');
           if (!_isDisposing) {
             notifyListeners();
           }
@@ -146,7 +162,7 @@ class NotificationService with ChangeNotifier {
         },
         onDisconnect: (StompFrame frame) {
           _isConnected = false;
-          print('WebSocket disconnected');
+          print('WebSocket disconnected for user $userId');
           if (!_isDisposing) {
             notifyListeners();
           }
@@ -158,21 +174,22 @@ class NotificationService with ChangeNotifier {
   }
 
   void disconnectWebSocket() {
-    _isDisposing = true; // Set flag to indicate disposal
+    _isDisposing = true;
     _stompClient?.deactivate();
     _isConnected = false;
-    // Do not call notifyListeners() here, as the widget is being disposed
     print('WebSocket disconnected during disposal');
   }
 
   Future<void> fetchNotifications(int userId) async {
     try {
       final response = await _dio.get('/api/notifications');
+      print('Fetched notifications from server: ${response.data}');
       _notifications = (response.data as List)
           .map((json) => NotificationDTO.fromJson(json))
           .toList();
       _unreadNotifications =
           _notifications.where((notification) => !notification.isRead).toList();
+      print('Updated notifications: ${_notifications.length}, unread: ${_unreadNotifications.length}');
       if (!_isDisposing) {
         notifyListeners();
       }
@@ -184,9 +201,11 @@ class NotificationService with ChangeNotifier {
   Future<void> fetchUnreadNotifications(int userId) async {
     try {
       final response = await _dio.get('/api/notifications?unreadOnly=true');
+      print('Fetched unread notifications from server: ${response.data}');
       _unreadNotifications = (response.data as List)
           .map((json) => NotificationDTO.fromJson(json))
           .toList();
+      print('Updated unread notifications: ${_unreadNotifications.length}');
       if (!_isDisposing) {
         notifyListeners();
       }
@@ -202,6 +221,7 @@ class NotificationService with ChangeNotifier {
         final notification = _notifications.firstWhere((n) => n.id == notificationId);
         notification.isRead = true;
         _unreadNotifications.removeWhere((n) => n.id == notificationId);
+        print('Marked notification $notificationId as read');
         if (!_isDisposing) {
           notifyListeners();
         }
@@ -217,6 +237,7 @@ class NotificationService with ChangeNotifier {
       if (response.statusCode == 204) {
         _notifications.removeWhere((n) => n.id == notificationId);
         _unreadNotifications.removeWhere((n) => n.id == notificationId);
+        print('Deleted notification $notificationId');
         if (!_isDisposing) {
           notifyListeners();
         }
@@ -248,8 +269,8 @@ class NotificationService with ChangeNotifier {
     return Exception('An unexpected error occurred');
   }
 
-  // Optional: Reset the disposal flag if the service is reused
   void resetDisposalState() {
     _isDisposing = false;
+    print('Reset _isDisposing to false');
   }
 }
