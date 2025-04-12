@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:front/screens/homepage/views/notifications_screen.dart';
 import 'package:provider/provider.dart';
-import '../../constants/colors.dart';
-import '../../services/auth_service.dart';
+import '../../../constants/colors.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/notification_service.dart';
 
 class HeaderSection extends StatelessWidget {
   const HeaderSection({super.key});
@@ -9,6 +11,7 @@ class HeaderSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: true);
+    final notificationService = Provider.of<NotificationService>(context); // Access NotificationService
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -48,9 +51,46 @@ class HeaderSection extends StatelessWidget {
                   ),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                onPressed: () {},
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.notifications_outlined,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      // Navigate to NotificationsScreen when the icon is tapped
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  // Show badge if there are unread notifications
+                  if (notificationService.unreadCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          notificationService.unreadCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),

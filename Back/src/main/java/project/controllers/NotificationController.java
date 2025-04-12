@@ -72,10 +72,4 @@ public class NotificationController {
         return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/cleanup-notifications")
-    public ResponseEntity<String> triggerCleanup() {
-        cleanupService.deleteExpiredNotifications();
-        return ResponseEntity.ok("Cleanup triggered");
-    }
-
 }

@@ -16,7 +16,8 @@ import '../../services/enrollment_service.dart';
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/instructor_service.dart';
-import '../../services/SessionService.dart'; // Added SessionService import
+import '../../services/notification_service.dart'; // Import NotificationService
+import '../../services/SessionService.dart';
 import '../instructor/views/LobbyScreen.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
@@ -116,16 +117,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final BookmarkService bookmarkService = BookmarkService(baseUrl: 'http://192.168.1.13:8080');
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   final ImageService imageService = ImageService();
-  final SessionService sessionService = SessionService(baseUrl: 'http://192.168.1.13:8080'); // Initialize SessionService
+  final SessionService sessionService = SessionService(baseUrl: 'http://192.168.1.13:8080');
   late AuthService _authService;
+  late NotificationService _notificationService; // Add this field to store NotificationService
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
   List<CourseDTO> _featuredCourses = [];
-  List<Map<String, dynamic>> _topInstructors = []; // {name: String, id: int}
+  List<Map<String, dynamic>> _topInstructors = [];
   Map<String, Uint8List?> _instructorImages = {};
   List<Map<String, dynamic>> _categories = [];
-  List<SessionDTO> _availableSessions = []; // Store available live sessions
-  Map<int, String> _instructorNames = {}; // New map for instructor names
+  List<SessionDTO> _availableSessions = [];
+  Map<int, String> _instructorNames = {};
 
   // Search-related variables (unchanged)
   final TextEditingController _searchController = TextEditingController();
@@ -138,6 +140,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialize NotificationService here
+    _notificationService = Provider.of<NotificationService>(context, listen: false);
     _initializeServices();
     _searchFocusNode.addListener(_onSearchFocusChanged);
     _searchController.addListener(_onSearchTextChanged);
@@ -148,6 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _removeOverlay();
+    // Use the stored reference to disconnect WebSocket
+    _notificationService.disconnectWebSocket();
     super.dispose();
   }
 
@@ -155,13 +161,62 @@ class _HomeScreenState extends State<HomeScreen> {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
     if (token != null) {
+      // Set tokens for existing services
       courseService.setToken(token);
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
       imageService.setToken(token);
-      sessionService.setToken(token); // Set token for SessionService
+      sessionService.setToken(token);
       _authService = authService;
-      await _refreshAllData(token); // Initial load
+
+      // Set token for NotificationService
+      _notificationService.setToken(token);
+
+      // Fetch user ID for notifications
+      final username = authService.username;
+      if (username != null) {
+        final userId = await authService.getUserIdByUsername(username);
+        if (userId != null) {
+          // Fetch notifications
+          try {
+            await _notificationService.fetchNotifications(userId);
+            await _notificationService.fetchUnreadNotifications(userId);
+            print('Notifications fetched: ${_notificationService.notifications.length}');
+            print('Unread notifications: ${_notificationService.unreadCount}');
+          } catch (e) {
+            print('Error fetching notifications: $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to load notifications: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+
+          // Initialize WebSocket for real-time notifications
+          try {
+            await _notificationService.initializeWebSocket(userId.toString(), token);
+            print('WebSocket initialized for user $userId');
+          } catch (e) {
+            print('Error initializing WebSocket: $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to connect to notifications: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } else {
+          print('User ID not found for username: $username');
+        }
+      } else {
+        print('Username not available');
+      }
+
+      // Fetch other data
+      await _refreshAllData(token);
+    } else {
+      print('Token not available');
     }
   }
 
@@ -174,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _fetchFeaturedCourses(token),
       _fetchTopInstructors(token, context),
       _fetchCategories(token),
-      _fetchAvailableSessions(token), // Fetch live sessions
+      _fetchAvailableSessions(token),
     ]);
   }
 
@@ -260,7 +315,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _topInstructors = topInstructors;
     });
 
-    // Fetch images for all top instructors
     for (var instructor in topInstructors) {
       await _fetchInstructorImage(instructor['name'] as String, instructor['id'] as int, token);
     }
@@ -304,29 +358,52 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Fetch available live sessions for the student
   Future<void> _fetchAvailableSessions(String token) async {
     sessionService.setToken(token);
-    final instructorService = InstructorService()..setToken(token); // Initialize InstructorService
+    final instructorService = InstructorService()..setToken(token);
     try {
       final userId = await _authService.getUserIdByUsername(_authService.username ?? '');
       if (userId != null) {
-        final sessions = await sessionService.getAvailableSessions(userId, status: 'LIVE');
-        // Fetch instructor names for each session
-        for (var session in sessions) {
+        // Fetch all sessions without status filter
+        final sessions = await sessionService.getAvailableSessions(userId);
+        print('Fetched ${sessions.length} sessions: ${sessions.map((s) => {
+          'id': s.id,
+          'title': s.title,
+          'startTime': s.startTime.toIso8601String(),
+          'endTime': s.endTime.toIso8601String(),
+          'status': s.status
+        }).toList()}');
+
+        // Filter for LIVE sessions only
+        final now = DateTime.now();
+        final liveSessions = sessions.where((session) {
+          final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime.add(Duration(minutes: 1)));
+          return isLive;
+        }).toList();
+        print('Filtered ${liveSessions.length} LIVE sessions: ${liveSessions.map((s) => {
+          'id': s.id,
+          'title': s.title,
+          'startTime': s.startTime.toIso8601String(),
+          'endTime': s.endTime.toIso8601String(),
+          'status': s.status
+        }).toList()}');
+
+        // Fetch instructor names for live sessions
+        for (var session in liveSessions) {
           if (session.instructorId != null && !_instructorNames.containsKey(session.instructorId)) {
             final profile = await instructorService.getInstructorProfile(session.instructorId!);
             _instructorNames[session.instructorId!] = profile?.username ?? 'Unknown';
           }
         }
+
         setState(() {
-          _availableSessions = sessions;
+          _availableSessions = liveSessions;
         });
       } else {
         throw Exception('User ID not found');
       }
     } catch (e) {
-      print('Error fetching available sessions: $e');
+      print('Error fetching live sessions: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load live sessions: $e'),
@@ -648,9 +725,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   Column(
                     children: [
                       _buildContinueLearning(),
-                      const SizedBox(height: 20), // Space between sections
-                      _buildLiveSessions(), // New Live Sessions section
-                      const SizedBox(height: 80), // Bottom padding
+                      const SizedBox(height: 20),
+                      _buildLiveSessions(),
+                      const SizedBox(height: 80),
                     ],
                   ),
               ],
@@ -988,7 +1065,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // New Live Sessions section
   Widget _buildLiveSessions() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -999,7 +1075,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Live & Upcoming Sessions',
+                'Live Sessions',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
@@ -1043,7 +1119,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'No live or upcoming sessions',
+                    'No live sessions',
                     style: TextStyle(
                       fontSize: 16,
                       color: AppColors.textGray,
@@ -1061,23 +1137,7 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (context, index) {
               final session = _availableSessions[index];
               final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
-              final now = DateTime.now();
-              final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime.add(Duration(minutes: 1))); // Add buffer for short sessions
-              final isUpcoming = now.isBefore(session.startTime);
-              final isEnded = now.isAfter(session.endTime);
-
-              // Debug print to check session status
-              print('Session: ${session.title}, Start: ${session.startTime}, End: ${session.endTime}, isLive: $isLive, isUpcoming: $isUpcoming, isEnded: $isEnded');
-
-              // Skip ENDED sessions
-              if (isEnded) return const SizedBox.shrink();
-
-              // Skip if neither LIVE nor UPCOMING (shouldn't happen, but for safety)
-              if (!isLive && !isUpcoming) return const SizedBox.shrink();
-
-              // Determine status and color
-              final status = isLive ? 'LIVE' : 'UPCOMING';
-              final statusColor = isLive ? Colors.red : Colors.orange;
+              print('Rendering Live Session: ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}');
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -1088,7 +1148,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header
                     Container(
                       decoration: BoxDecoration(
                         color: AppColors.primary.withOpacity(0.1),
@@ -1116,23 +1175,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.1),
+                              color: Colors.red.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: statusColor),
+                              border: Border.all(color: Colors.red),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  isLive ? Icons.live_tv : Icons.upcoming,
+                                  Icons.live_tv,
                                   size: 14,
-                                  color: statusColor,
+                                  color: Colors.red,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  status,
+                                  'LIVE',
                                   style: TextStyle(
-                                    color: statusColor,
+                                    color: Colors.red,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -1143,7 +1202,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    // Content
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -1216,27 +1274,26 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          if (isLive) // Show "Join Live" only for LIVE sessions
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    await _joinSession(session);
-                                  },
-                                  icon: const Icon(Icons.video_call),
-                                  label: const Text('Join Live'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.green,
-                                    side: const BorderSide(color: Colors.green),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  await _joinSession(session);
+                                },
+                                icon: const Icon(Icons.video_call),
+                                label: const Text('Join Live'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.green,
+                                  side: const BorderSide(color: Colors.green),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -1250,7 +1307,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-// Helper method (unchanged from previous suggestion)
   Future<void> _joinSession(SessionDTO session) async {
     try {
       final joinDetails = await sessionService.getSessionJoinDetails(session.id!);
