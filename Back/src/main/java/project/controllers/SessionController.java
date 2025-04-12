@@ -111,7 +111,7 @@ public class SessionController {
         String notificationTitle = "New Session: " + session.getTitle();
         String notificationMessage = "Instructor " + instructor.getUser().getUsername() + " has scheduled a new session on " +
                 session.getStartTime() + ". " + (session.isFollowerOnly() ? "This is follower-only." : "Open to all.") +
-                " Join here: " + meetingLink;
+                " Join here: " + meetingLink + " [Session ID: " + session.getId() + "]"; // Add Session ID
 
         notificationService.createNotificationsWithPagination(
                 userIdsToNotify,

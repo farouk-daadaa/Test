@@ -46,6 +46,10 @@ public class SessionStatusUpdater {
                 sessionRepository.save(session); // Persist the status change
 
                 if (newStatus == Session.SessionStatus.LIVE) {
+                    String notificationTitle = "Session Live: " + session.getTitle();
+                    String notificationMessage = "The session by " + session.getInstructor().getUser().getUsername() +
+                            " is now live! Join here: " + session.getMeetingLink() + " [Session ID: " + session.getId() + "]"; // Add Session ID
+
                     if (session.isFollowerOnly()) {
                         // Follower-only session: Notify only the instructor's followers
                         List<UserEntity> followers = session.getInstructor().getFollowers();
@@ -53,9 +57,8 @@ public class SessionStatusUpdater {
                         for (UserEntity follower : followers) {
                             notificationService.createNotification(
                                     follower.getId(),
-                                    "Session Live: " + session.getTitle(),
-                                    "The session by " + session.getInstructor().getUser().getUsername() +
-                                            " is now live! Join here: " + session.getMeetingLink(),
+                                    notificationTitle,
+                                    notificationMessage,
                                     Notification.NotificationType.SESSION
                             );
                         }
@@ -66,15 +69,13 @@ public class SessionStatusUpdater {
                         int pageSize = 100;
                         List<UserEntity> users;
                         do {
-                            // Use UserRoleName.USER instead of "USER"
                             users = userRepository.findByRole(UserRoleName.USER, PageRequest.of(page, pageSize));
                             logger.info("Fetched batch {} of users for public session {}: {} users", page, session.getId(), users.size());
                             for (UserEntity user : users) {
                                 notificationService.createNotification(
                                         user.getId(),
-                                        "Session Live: " + session.getTitle(),
-                                        "The session by " + session.getInstructor().getUser().getUsername() +
-                                                " is now live! Join here: " + session.getMeetingLink(),
+                                        notificationTitle,
+                                        notificationMessage,
                                         Notification.NotificationType.SESSION
                                 );
                             }
