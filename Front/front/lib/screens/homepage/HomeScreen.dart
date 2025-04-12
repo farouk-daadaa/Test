@@ -377,11 +377,9 @@ class _HomeScreenState extends State<HomeScreen> {
           'status': s.status
         }).toList()}');
 
-        // Filter for LIVE sessions only
-        final now = DateTime.now();
+        // Filter for LIVE sessions using the status field
         final liveSessions = sessions.where((session) {
-          final isLive = now.isAfter(session.startTime) && now.isBefore(session.endTime.add(Duration(minutes: 1)));
-          return isLive;
+          return session.status == 'LIVE';
         }).toList();
         print('Filtered ${liveSessions.length} LIVE sessions: ${liveSessions.map((s) => {
           'id': s.id,
@@ -1145,7 +1143,12 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, index) {
                 final session = _availableSessions[index];
                 final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
-                print('Rendering Live Session (Horizontal): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}');
+                print('Rendering Live Session (Horizontal): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
+
+                // Double-check the status before rendering
+                if (session.status != 'LIVE') {
+                  return const SizedBox.shrink(); // Skip non-LIVE sessions
+                }
 
                 return SizedBox(
                   width: 260,
@@ -1322,7 +1325,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSingleSessionCard(SessionDTO session) {
     final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
-    print('Rendering Live Session (Single): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}');
+    print('Rendering Live Session (Single): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
+
+    // Double-check the status before rendering
+    if (session.status != 'LIVE') {
+      return const SizedBox.shrink(); // Skip non-LIVE sessions
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

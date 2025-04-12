@@ -52,6 +52,45 @@ class NotificationDTO {
   String getFormattedDate() {
     return DateFormat('MMM dd, yyyy – HH:mm').format(createdAt);
   }
+
+  // Determine if the notification is for a live or scheduled session
+  String getNotificationSubtype() {
+    if (title.startsWith('Session Live:')) {
+      return 'LIVE';
+    } else if (title.startsWith('New Session:')) {
+      return 'SCHEDULED';
+    }
+    return 'UNKNOWN';
+  }
+
+  // Extract the Session ID from the message (e.g., "[Session ID: 123]")
+  int? getSessionId() {
+    final regex = RegExp(r'\[Session ID: (\d+)\]');
+    final match = regex.firstMatch(message);
+    final sessionIdStr = match?.group(1);
+    return sessionIdStr != null ? int.tryParse(sessionIdStr) : null;
+  }
+
+  // Format the message for display
+  String getFormattedMessage() {
+    final subtype = getNotificationSubtype();
+    if (subtype == 'LIVE') {
+      final sessionTitle = title.replaceFirst('Session Live: ', '');
+      return "'$sessionTitle' is now live tap to join";
+    } else if (subtype == 'SCHEDULED') {
+      final sessionTitle = title.replaceFirst('New Session: ', '');
+      final instructorMatch = RegExp(r'Instructor (\w+)').firstMatch(message);
+      final instructor = instructorMatch?.group(1) ?? 'Unknown';
+      final dateTimeMatch = RegExp(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})').firstMatch(message);
+      final dateTimeStr = dateTimeMatch?.group(1);
+      final dateTime = dateTimeStr != null ? DateTime.parse(dateTimeStr) : createdAt;
+      final visibility = message.contains('Open to all') ? 'Public' : 'Followers Only';
+      final formattedDate = DateFormat('MMM d, yyyy').format(dateTime);
+      final formattedTime = DateFormat('h:mm a').format(dateTime.toLocal());
+      return "Instructor $instructor has scheduled '$sessionTitle' on $formattedDate at $formattedTime ($visibility).";
+    }
+    return message; // Fallback for other notification types
+  }
 }
 
 class NotificationService with ChangeNotifier {

@@ -76,10 +76,7 @@ class _AllSessionsScreenState extends State<AllSessionsScreen> {
   }
 
   String _getStatus(SessionDTO session) {
-    final now = DateTime.now();
-    if (now.isBefore(session.startTime)) return 'UPCOMING';
-    if (now.isAfter(session.startTime) && now.isBefore(session.endTime)) return 'LIVE';
-    return 'ENDED';
+    return session.status; // Use the status field from SessionDTO
   }
 
   Color _getStatusColor(String status) {
@@ -207,7 +204,7 @@ class _AllSessionsScreenState extends State<AllSessionsScreen> {
                   children: [
                     DropdownButton<String>(
                       value: _selectedFilter,
-                      items: ['All', 'Live', 'Upcoming', 'Ended']
+                      items: ['All', 'LIVE', 'UPCOMING', 'ENDED']
                           .map((filter) => DropdownMenuItem(
                         value: filter,
                         child: Text(filter),
@@ -267,6 +264,7 @@ class _AllSessionsScreenState extends State<AllSessionsScreen> {
               itemBuilder: (context, index) {
                 final session = _filteredSessions[index];
                 final status = _getStatus(session);
+                print('Rendering Session: ${session.title}, Status: $status, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}');
                 final statusColor = _getStatusColor(status);
                 final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
 
