@@ -60,6 +60,16 @@ public class NotificationController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/read-all")
+    public ResponseEntity<Void> markAllAsRead(Authentication authentication) {
+        String username = authentication.getName();
+        UserEntity user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("User not found: " + username));
+
+        notificationService.markAllAsRead(user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{notificationId}")
     public ResponseEntity<Void> deleteNotification(
             @PathVariable Long notificationId,
@@ -71,5 +81,4 @@ public class NotificationController {
         notificationService.deleteNotification(notificationId, user.getId());
         return ResponseEntity.noContent().build();
     }
-
 }

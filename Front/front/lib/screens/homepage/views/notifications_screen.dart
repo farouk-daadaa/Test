@@ -8,8 +8,81 @@ import '../../../services/notification_service.dart';
 import '../../instructor/views/LobbyScreen.dart';
 import 'all_sessions_screen.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotifications();
+  }
+
+  Future<void> _fetchNotifications() async {
+    final notificationService = Provider.of<NotificationService>(context, listen: false);
+    // Avoid fetching if notifications are already loaded
+    if (notificationService.notifications.isNotEmpty) {
+      print('Notifications already loaded, skipping fetch');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final username = authService.username;
+    if (username != null) {
+      final userId = await authService.getUserIdByUsername(username);
+      if (userId != null) {
+        try {
+          await notificationService.fetchNotifications(userId);
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to load notifications: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _markAllAsRead() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final notificationService = Provider.of<NotificationService>(context, listen: false);
+    final username = authService.username;
+    if (username != null) {
+      final userId = await authService.getUserIdByUsername(username);
+      if (userId != null) {
+        try {
+          await notificationService.markAllAsRead(userId);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('All notifications marked as read'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to mark all as read: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,8 +97,27 @@ class NotificationsScreen extends StatelessWidget {
         title: const Text('Notifications'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        actions: [
+          if (notificationService.unreadCount > 0)
+            IconButton(
+              icon: const Icon(Icons.mark_email_read),
+              tooltip: 'Mark All as Read',
+              onPressed: _markAllAsRead,
+            ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _fetchNotifications,
+          ),
+        ],
       ),
-      body: notificationService.notifications.isEmpty
+      body: _isLoading
+          ? const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+        ),
+      )
+          : notificationService.notifications.isEmpty
           ? const Center(
         child: Text(
           'No notifications available',
@@ -35,147 +127,166 @@ class NotificationsScreen extends StatelessWidget {
           ),
         ),
       )
-          : ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: notificationService.notifications.length,
-        itemBuilder: (context, index) {
-          final notification = notificationService.notifications[index];
-          return NotificationCard(
-            notification: notification,
-            onMarkAsRead: () async {
-              if (!notification.isRead) {
+          : RefreshIndicator(
+        onRefresh: _fetchNotifications,
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: notificationService.notifications.length,
+          itemBuilder: (context, index) {
+            final notification = notificationService.notifications[index];
+            return NotificationCard(
+              notification: notification,
+              onMarkAsRead: () async {
+                if (!notification.isRead) {
+                  final username = authService.username;
+                  if (username != null) {
+                    final userId = await authService.getUserIdByUsername(username);
+                    if (userId != null) {
+                      try {
+                        await notificationService.markAsRead(notification.id, userId);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Notification marked as read'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to mark as read: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                }
+              },
+              onDelete: () async {
                 final username = authService.username;
                 if (username != null) {
                   final userId = await authService.getUserIdByUsername(username);
                   if (userId != null) {
                     try {
-                      await notificationService.markAsRead(notification.id, userId);
+                      await notificationService.deleteNotification(notification.id, userId);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Notification marked as read'),
+                          content: Text('Notification deleted'),
                           duration: Duration(seconds: 2),
                         ),
                       );
                     } catch (e) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Failed to mark as read: $e'),
+                          content: Text('Failed to delete notification: $e'),
                           backgroundColor: Colors.red,
                         ),
                       );
                     }
                   }
                 }
-              }
-            },
-            onDelete: () async {
-              final username = authService.username;
-              if (username != null) {
+              },
+              onTap: () async {
+                // Mark as read when tapped
+                if (!notification.isRead) {
+                  final username = authService.username;
+                  if (username != null) {
+                    final userId = await authService.getUserIdByUsername(username);
+                    if (userId != null) {
+                      try {
+                        await notificationService.markAsRead(notification.id, userId);
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to mark as read: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                }
+
+                // Handle navigation based on notification type
+                final subtype = notification.getNotificationSubtype();
+                final sessionId = notification.getSessionId();
+                final username = authService.username;
+                if (username == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please log in to perform this action'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
                 final userId = await authService.getUserIdByUsername(username);
-                if (userId != null) {
+                if (userId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('User ID not found'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                final token = authService.token;
+                if (token == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Authentication token not found. Please log in again.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                sessionService.setToken(token);
+
+                if (subtype == 'LIVE' && sessionId != null) {
                   try {
-                    await notificationService.deleteNotification(notification.id, userId);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Notification deleted'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                    final sessionData = await sessionService.getSessionJoinDetails(sessionId);
+                    final meetingLink = sessionData['meetingLink'] as String?;
+                    final meetingToken = sessionData['meetingToken'] as String?;
+                    if (meetingLink != null && meetingToken != null) {
+                      HMSSDK hmsSDK = HMSSDK();
+                      await hmsSDK.build();
+
+                      final sessionTitle = notification.title.replaceFirst('Session Live: ', '');
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => LobbyScreen(
+                            hmsSDK: hmsSDK,
+                            meetingToken: meetingToken,
+                            username: username,
+                            sessionTitle: sessionTitle,
+                          ),
+                        ),
+                      );
+                    } else {
+                      throw Exception('Invalid session data');
+                    }
                   } catch (e) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Failed to delete notification: $e'),
+                        content: Text('Failed to join session: $e'),
                         backgroundColor: Colors.red,
                       ),
                     );
                   }
-                }
-              }
-            },
-            onTap: () async {
-              final subtype = notification.getNotificationSubtype();
-              final sessionId = notification.getSessionId();
-              final username = authService.username;
-              if (username == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please log in to perform this action'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              final userId = await authService.getUserIdByUsername(username);
-              if (userId == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('User ID not found'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              // Retrieve the token from AuthService and set it in SessionService
-              final token = authService.token; // Assuming AuthService has a token getter
-              if (token == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Authentication token not found. Please log in again.'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-              sessionService.setToken(token);
-
-              if (subtype == 'LIVE' && sessionId != null) {
-                try {
-                  // Fetch session details
-                  final sessionData = await sessionService.getSessionJoinDetails(sessionId);
-                  final meetingLink = sessionData['meetingLink'] as String?;
-                  final meetingToken = sessionData['meetingToken'] as String?;
-                  if (meetingLink != null && meetingToken != null) {
-                    // Initialize the 100ms SDK
-                    HMSSDK hmsSDK = HMSSDK();
-                    await hmsSDK.build(); // Build the SDK instance
-
-                    // Extract session title from notification title (e.g., "Session Live: hh" -> "hh")
-                    final sessionTitle = notification.title.replaceFirst('Session Live: ', '');
-
-                    // Navigate to LobbyScreen
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => LobbyScreen(
-                          hmsSDK: hmsSDK,
-                          meetingToken: meetingToken,
-                          username: username,
-                          sessionTitle: sessionTitle,
-                        ),
-                      ),
-                    );
-                  } else {
-                    throw Exception('Invalid session data');
-                  }
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Failed to join session: $e'),
-                      backgroundColor: Colors.red,
-                    ),
+                } else if (subtype == 'SCHEDULED') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AllSessionsScreen()),
                   );
                 }
-              } else if (subtype == 'SCHEDULED') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AllSessionsScreen()),
-                );
-              }
-            },
-          );
-        },
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -199,72 +310,108 @@ class NotificationCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Card(
-        elevation: 2,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
         margin: const EdgeInsets.only(bottom: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(
-                _getIconForType(notification.type),
-                color: notification.isRead ? Colors.grey : AppColors.primary,
-                size: 30,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      notification.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: notification.isRead ? Colors.grey : Colors.black,
+        child: Card(
+          elevation: 3,
+          color: notification.isRead ? Colors.white : Colors.blue[50], // Subtle background for unread
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: notification.isRead ? Colors.grey[200]! : AppColors.primary.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Unread Indicator Dot
+                if (!notification.isRead)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, right: 8),
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      notification.getFormattedMessage(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: notification.isRead ? Colors.grey : Colors.black87,
+                  ),
+                // Icon
+                Icon(
+                  _getIconForType(notification.type),
+                  color: notification.isRead ? Colors.grey : AppColors.primary,
+                  size: 30,
+                ),
+                const SizedBox(width: 12),
+                // Notification Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        notification.title,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: notification.isRead ? Colors.grey[700] : Colors.black,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      notification.getFormattedDate(),
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      const SizedBox(height: 6),
+                      Text(
+                        notification.getFormattedMessage(),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: notification.isRead ? Colors.grey[600] : Colors.black87,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        notification.getFormattedDate(),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Actions
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'mark_as_read') {
+                      onMarkAsRead();
+                    } else if (value == 'delete') {
+                      onDelete();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (!notification.isRead)
+                      const PopupMenuItem(
+                        value: 'mark_as_read',
+                        child: Text('Mark as Read'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete'),
                     ),
                   ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'mark_as_read') {
-                    onMarkAsRead();
-                  } else if (value == 'delete') {
-                    onDelete();
-                  }
-                },
-                itemBuilder: (context) => [
-                  if (!notification.isRead)
-                    const PopupMenuItem(
-                      value: 'mark_as_read',
-                      child: Text('Mark as Read'),
-                    ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete'),
+                  icon: Icon(
+                    Icons.more_vert,
+                    color: Colors.grey[600],
                   ),
-                ],
-                icon: const Icon(Icons.more_vert),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

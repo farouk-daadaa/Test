@@ -28,7 +28,7 @@ class NotificationDTO {
         title: json['title'] as String? ?? 'Untitled',
         message: json['message'] as String? ?? '',
         createdAt: DateTime.parse(json['createdAt'] as String? ?? DateTime.now().toIso8601String()),
-        isRead: json['isRead'] as bool? ?? false,
+        isRead: json['read'] as bool? ?? false,
         type: json['type'] as String? ?? 'UNKNOWN',
       );
     } catch (e) {
@@ -247,6 +247,26 @@ class NotificationService with ChangeNotifier {
       print('Updated unread notifications: ${_unreadNotifications.length}');
       if (!_isDisposing) {
         notifyListeners();
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  Future<void> markAllAsRead(int userId) async {
+    try {
+      final response = await _dio.put('/api/notifications/read-all');
+      if (response.statusCode == 204) {
+        // Update all notifications to be read
+        for (var notification in _notifications) {
+          notification.isRead = true;
+        }
+        // Clear unread notifications
+        _unreadNotifications.clear();
+        print('Marked all notifications as read for user $userId');
+        if (!_isDisposing) {
+          notifyListeners();
+        }
       }
     } catch (e) {
       throw _handleError(e);

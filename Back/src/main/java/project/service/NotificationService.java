@@ -164,6 +164,13 @@ public class NotificationService {
     }
 
     @Transactional
+    public void markAllAsRead(Long userId) {
+        LocalDateTime now = LocalDateTime.now();
+        int updatedCount = notificationRepository.markAllAsReadForUser(userId, now);
+        logger.info("Marked {} notifications as read for user {}", updatedCount, userId);
+    }
+
+    @Transactional
     public void deleteNotification(Long notificationId, Long userId) {
         Notification notification = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new IllegalStateException("Notification not found with id: " + notificationId));
