@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hmssdk_flutter/hmssdk_flutter.dart'; // Import the 100ms SDK
+import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../../constants/colors.dart';
 import '../../../services/SessionService.dart';
@@ -27,12 +27,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _fetchNotifications() async {
     final notificationService = Provider.of<NotificationService>(context, listen: false);
-    // Avoid fetching if notifications are already loaded
-    if (notificationService.notifications.isNotEmpty) {
-      print('Notifications already loaded, skipping fetch');
-      return;
-    }
-
     setState(() {
       _isLoading = true;
     });
@@ -188,7 +182,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 }
               },
               onTap: () async {
-                // Mark as read when tapped
                 if (!notification.isRead) {
                   final username = authService.username;
                   if (username != null) {
@@ -208,10 +201,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   }
                 }
 
-                // Handle navigation based on notification type
                 final subtype = notification.getNotificationSubtype();
                 final sessionId = notification.getSessionId();
-                final courseId = notification.getCourseId(); // Extract course ID
+                final courseId = notification.getCourseId();
                 final username = authService.username;
                 if (username == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -285,7 +277,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     MaterialPageRoute(builder: (context) => const AllSessionsScreen()),
                   );
                 } else if (subtype == 'COURSE' && courseId != null) {
-                  // Navigate to CourseDetailsScreen for course notifications
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -326,7 +317,7 @@ class NotificationCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         child: Card(
           elevation: 3,
-          color: notification.isRead ? Colors.white : Colors.blue[50], // Subtle background for unread
+          color: notification.isRead ? Colors.white : Colors.blue[50],
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(
@@ -339,7 +330,6 @@ class NotificationCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Unread Indicator Dot
                 if (!notification.isRead)
                   Padding(
                     padding: const EdgeInsets.only(top: 8, right: 8),
@@ -352,14 +342,12 @@ class NotificationCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                // Icon
                 Icon(
                   _getIconForType(notification.type),
                   color: notification.isRead ? Colors.grey : AppColors.primary,
                   size: 30,
                 ),
                 const SizedBox(width: 12),
-                // Notification Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -395,7 +383,6 @@ class NotificationCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Actions
                 PopupMenuButton<String>(
                   onSelected: (value) {
                     if (value == 'mark_as_read') {

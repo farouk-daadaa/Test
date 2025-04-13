@@ -53,7 +53,6 @@ class NotificationDTO {
     return DateFormat('MMM dd, yyyy – HH:mm').format(createdAt);
   }
 
-  // Determine the subtype of the notification (e.g., LIVE, SCHEDULED, COURSE)
   String getNotificationSubtype() {
     if (title.startsWith('Session Live:')) {
       return 'LIVE';
@@ -65,7 +64,6 @@ class NotificationDTO {
     return 'UNKNOWN';
   }
 
-  // Extract the Session ID from the message (e.g., "[Session ID: 123]")
   int? getSessionId() {
     final regex = RegExp(r'\[Session ID: (\d+)\]');
     final match = regex.firstMatch(message);
@@ -73,7 +71,6 @@ class NotificationDTO {
     return sessionIdStr != null ? int.tryParse(sessionIdStr) : null;
   }
 
-  // Extract the Course ID from the message (e.g., "[Course ID: 123]")
   int? getCourseId() {
     final regex = RegExp(r'\[Course ID: (\d+)\]');
     final match = regex.firstMatch(message);
@@ -81,7 +78,6 @@ class NotificationDTO {
     return courseIdStr != null ? int.tryParse(courseIdStr) : null;
   }
 
-  // Format the message for display based on the notification subtype
   String getFormattedMessage() {
     final subtype = getNotificationSubtype();
     if (subtype == 'LIVE') {
@@ -105,7 +101,7 @@ class NotificationDTO {
       final instructor = instructorMatch?.group(1) ?? 'Unknown';
       return "Instructor $instructor has published a new course: '$courseTitle'. Tap to view.";
     }
-    return message; // Fallback for other notification types
+    return message;
   }
 }
 
@@ -133,13 +129,20 @@ class NotificationService with ChangeNotifier {
     _dio.options.headers['Authorization'] = 'Bearer $token';
   }
 
-  Future<void> initializeWebSocket(String userId, String token) async {
-    if (_stompClient != null && _stompClient!.connected) {
-      print('WebSocket already connected for user $userId');
-      return; // Already connected
-    }
+  Future<void> clearStateAndDisconnect() async {
+    print('Clearing NotificationService state and disconnecting WebSocket');
+    _notifications.clear();
+    _unreadNotifications.clear();
+    disconnectWebSocket();
+    _isConnected = false;
+    resetDisposalState();
+    notifyListeners();
+  }
 
-    // Reset _isDisposing when reinitializing WebSocket
+  Future<void> initializeWebSocket(String userId, String token) async {
+    // Always disconnect existing WebSocket before initializing a new one
+    disconnectWebSocket();
+
     _isDisposing = false;
     print('Reset _isDisposing to false for user $userId');
 
@@ -273,11 +276,9 @@ class NotificationService with ChangeNotifier {
     try {
       final response = await _dio.put('/api/notifications/read-all');
       if (response.statusCode == 204) {
-        // Update all notifications to be read
         for (var notification in _notifications) {
           notification.isRead = true;
         }
-        // Clear unread notifications
         _unreadNotifications.clear();
         print('Marked all notifications as read for user $userId');
         if (!_isDisposing) {

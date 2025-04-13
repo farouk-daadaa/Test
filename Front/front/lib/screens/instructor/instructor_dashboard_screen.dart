@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:front/screens/instructor/views/CourseAnalyticsView.dart';
 import 'package:front/screens/instructor/views/MyCoursesView.dart';
 import 'package:front/screens/instructor/views/MySessionsView.dart';
-import 'package:front/screens/homepage/views/User Profile/profile_screen.dart';
+import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/notifications_screen.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
@@ -34,6 +34,24 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ));
+
+    // Initialize WebSocket for the current user
+    _initializeWebSocket();
+  }
+
+  Future<void> _initializeWebSocket() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final notificationService = Provider.of<NotificationService>(context, listen: false);
+    await authService.loadToken();
+    final username = authService.username;
+    final token = authService.token;
+    if (username != null && token != null) {
+      final userId = await authService.getUserIdByUsername(username);
+      if (userId != null) {
+        notificationService.setToken(token);
+        await notificationService.initializeWebSocket(userId.toString(), token);
+      }
+    }
   }
 
   @override
@@ -93,7 +111,6 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
           Expanded(
             child: Column(
               children: [
-                // Show header only if the Profile tab (index 3) is not selected
                 if (_selectedIndex != 3)
                   Container(
                     padding: EdgeInsets.only(
@@ -182,7 +199,6 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
                       ],
                     ),
                   ),
-                // Main content
                 Expanded(
                   child: Container(
                     color: Colors.grey[50],
@@ -238,7 +254,6 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
 
   @override
   void dispose() {
-    // Reset status bar style when leaving the screen
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,

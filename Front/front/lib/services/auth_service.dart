@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../auth/two_factor_dialog.dart';
+import '../services/notification_service.dart'; // Import NotificationService
 
 // Global key for ScaffoldMessenger to use across the app
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -11,21 +12,26 @@ final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey = GlobalKey<Scaffol
 class AuthService with ChangeNotifier {
   static const String baseUrl = 'http://192.168.1.13:8080';
   final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+  final NotificationService _notificationService; // Add NotificationService dependency
   String? _token;
   String? _userRole;
   String? _instructorStatus;
   String? _username;
-  String? _email; // Added email field
-  DateTime? _lastCodeSentTime; // Track when the last 2FA code was sent
-  int? _remainingCodeResendTime; // Track the remaining countdown time
-  static const int _codeResendCooldown = 300; // 5 minutes in seconds
+  String? _email;
+  DateTime? _lastCodeSentTime;
+  int? _remainingCodeResendTime;
+  static const int _codeResendCooldown = 300;
+
+  // Constructor updated to accept NotificationService
+  AuthService({required NotificationService notificationService})
+      : _notificationService = notificationService;
 
   // Getters
   String? get token => _token;
   String? get userRole => _userRole;
   String? get instructorStatus => _instructorStatus;
   String? get username => _username;
-  String? get email => _email; // Getter for email
+  String? get email => _email;
   int? get remainingCodeResendTime => _remainingCodeResendTime;
 
   Future<bool> _checkInternetConnection() async {
@@ -48,13 +54,10 @@ class AuthService with ChangeNotifier {
     _userRole = await _secureStorage.read(key: 'user_role');
     _instructorStatus = await _secureStorage.read(key: 'instructor_status');
     _username = await _secureStorage.read(key: 'user_name');
-    // Load email from secure storage if available
     _email = await _secureStorage.read(key: 'user_email');
-    // Load last code sent time and remaining countdown time from secure storage
     String? lastSent = await _secureStorage.read(key: 'last_2fa_code_sent');
     if (lastSent != null) {
       _lastCodeSentTime = DateTime.parse(lastSent);
-      // Calculate remaining time based on last sent time
       final now = DateTime.now();
       final elapsedSeconds = now.difference(_lastCodeSentTime!).inSeconds;
       _remainingCodeResendTime = _codeResendCooldown - elapsedSeconds;
@@ -65,7 +68,6 @@ class AuthService with ChangeNotifier {
         await _secureStorage.delete(key: 'remaining_2fa_code_time');
       }
     }
-    // Load remaining time from storage if available
     String? remainingTime = await _secureStorage.read(key: 'remaining_2fa_code_time');
     if (remainingTime != null && _remainingCodeResendTime == null) {
       _remainingCodeResendTime = int.tryParse(remainingTime);
@@ -78,8 +80,8 @@ class AuthService with ChangeNotifier {
     if (_username != null) {
       try {
         final userData = await getUser(_username!);
-        _email = userData['email'] as String?; // Extract email from the API response
-        await _secureStorage.write(key: 'user_email', value: _email); // Store email securely
+        _email = userData['email'] as String?;
+        await _secureStorage.write(key: 'user_email', value: _email);
         notifyListeners();
       } catch (e) {
         print('Error loading user details: $e');
@@ -123,12 +125,11 @@ class AuthService with ChangeNotifier {
 
               if (userData.containsKey('email')) {
                 _email = userData['email'].toString();
-                await _secureStorage.write(key: 'user_email', value: _email); // Store email
+                await _secureStorage.write(key: 'user_email', value: _email);
               }
 
               if (userData['twoFactorEnabled'] == true) {
                 print('2FA enabled, username: $_username, token: $_token');
-                // Check if we need to send a new code
                 if (_shouldSendNewCode()) {
                   await sendTwoFactorCode(context);
                 }
@@ -144,7 +145,7 @@ class AuthService with ChangeNotifier {
           }
 
           notifyListeners();
-          await loadUserDetails(); // Load email after login
+          await loadUserDetails();
           return responseData;
         } else {
           throw Exception('Invalid response format: missing access token');
@@ -158,7 +159,6 @@ class AuthService with ChangeNotifier {
             _token = json.decode(response.body)['accessToken'];
             await _secureStorage.write(key: 'auth_token', value: _token);
           }
-          // Check if we need to send a new code
           if (_shouldSendNewCode()) {
             await sendTwoFactorCode(context);
           }
@@ -181,17 +181,15 @@ class AuthService with ChangeNotifier {
     }
   }
 
-  // Helper method to check if a new code should be sent
   bool _shouldSendNewCode() {
     if (_lastCodeSentTime == null) {
-      return true; // No code has been sent yet
+      return true;
     }
     final now = DateTime.now();
     final difference = now.difference(_lastCodeSentTime!).inSeconds;
-    return difference >= _codeResendCooldown; // Resend only if 5 minutes have passed
+    return difference >= _codeResendCooldown;
   }
 
-  // Method to update the remaining countdown time
   Future<void> updateRemainingCodeResendTime(int remainingSeconds) async {
     _remainingCodeResendTime = remainingSeconds;
     await _secureStorage.write(
@@ -304,13 +302,12 @@ class AuthService with ChangeNotifier {
   }
 
   Future<void> logout(BuildContext context, {bool skipConfirmation = false}) async {
-    // Ensure only one dialog is shown by checking if a dialog is already active
     bool isDialogActive = false;
     if (Navigator.of(context).canPop()) {
       isDialogActive = true;
     }
 
-    bool confirmLogout = skipConfirmation; // Skip confirmation if specified
+    bool confirmLogout = skipConfirmation;
 
     if (!skipConfirmation && !isDialogActive) {
       confirmLogout = await showDialog(
@@ -338,6 +335,8 @@ class AuthService with ChangeNotifier {
     if (confirmLogout) {
       try {
         print('Clearing authentication state...');
+        // Clear NotificationService state and disconnect WebSocket
+        await _notificationService.clearStateAndDisconnect();
         _token = null;
         _userRole = null;
         _instructorStatus = null;
@@ -393,7 +392,7 @@ class AuthService with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body) as Map<String, dynamic>;
-        return responseData['message'] as String; // Extract the message field
+        return responseData['message'] as String;
       } else {
         throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to delete account');
       }
@@ -479,13 +478,11 @@ class AuthService with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final updatedData = json.decode(response.body);
-        // Update local username if it changed
         if (userData.containsKey('username') && userData['username'] != _username) {
           _username = userData['username'].toString();
           await _secureStorage.write(key: 'user_name', value: _username);
           notifyListeners();
         }
-        // Update email if it changed
         if (userData.containsKey('email') && userData['email'] != _email) {
           _email = userData['email'].toString();
           await _secureStorage.write(key: 'user_email', value: _email);
@@ -514,7 +511,7 @@ class AuthService with ChangeNotifier {
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body) as Map<String, dynamic>;
-        return responseData['message'] as String; // Extract the message field
+        return responseData['message'] as String;
       } else {
         throw Exception(jsonDecode(response.body)['message'] ?? 'Failed to update password');
       }
@@ -549,7 +546,6 @@ class AuthService with ChangeNotifier {
               ),
             ),
           );
-          // Optionally send the initial 2FA code after enabling
           if (_shouldSendNewCode()) {
             await sendTwoFactorCode(context);
           }
@@ -641,7 +637,7 @@ class AuthService with ChangeNotifier {
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
           _lastCodeSentTime = DateTime.now();
-          _remainingCodeResendTime = _codeResendCooldown; // Reset countdown to 5 minutes
+          _remainingCodeResendTime = _codeResendCooldown;
           await _secureStorage.write(key: 'last_2fa_code_sent', value: _lastCodeSentTime!.toIso8601String());
           await _secureStorage.write(key: 'remaining_2fa_code_time', value: _remainingCodeResendTime.toString());
           ScaffoldMessenger.of(context).showSnackBar(
