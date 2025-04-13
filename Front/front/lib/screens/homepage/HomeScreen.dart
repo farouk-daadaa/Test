@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/all_instructors_screen.dart';
 import 'package:front/screens/homepage/views/all_sessions_screen.dart';
@@ -140,7 +141,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize NotificationService here
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ));
     _notificationService = Provider.of<NotificationService>(context, listen: false);
     _initializeServices();
     _searchFocusNode.addListener(_onSearchFocusChanged);
@@ -152,8 +156,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _removeOverlay();
-    // Use the stored reference to disconnect WebSocket
     _notificationService.disconnectWebSocket();
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ));
     super.dispose();
   }
 
@@ -704,37 +711,46 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () async {
-            await _refreshAllData(null);
-          },
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const HeaderSection(),
-                _buildSearchBar(),
-                CategoriesSection(
-                  allCourses: _popularCourses,
-                  onCategorySelected: _openCategoryScreen,
-                ),
-                _buildPopularCourses(),
-                _buildTopInstructors(),
-                if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
-                  Column(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const HeaderSection(), // Header extends behind the status bar
+          Expanded(
+            child: SafeArea(
+              top: false, // Allow header to extend to the top
+              bottom: true, // Respect bottom safe area for bottom nav bar
+              child: RefreshIndicator(
+                onRefresh: () async {
+                  await _refreshAllData(null);
+                },
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildContinueLearning(),
-                      const SizedBox(height: 20),
-                      _buildLiveSessions(),
-                      const SizedBox(height: 80),
+                      _buildSearchBar(),
+                      CategoriesSection(
+                        allCourses: _popularCourses,
+                        onCategorySelected: _openCategoryScreen,
+                      ),
+                      _buildPopularCourses(),
+                      _buildTopInstructors(),
+                      if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
+                        Column(
+                          children: [
+                            _buildContinueLearning(),
+                            const SizedBox(height: 20),
+                            _buildLiveSessions(),
+                            const SizedBox(height: 80),
+                          ],
+                        ),
                     ],
                   ),
-              ],
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
       bottomNavigationBar: BottomNavBar(
         currentIndex: _selectedIndex,

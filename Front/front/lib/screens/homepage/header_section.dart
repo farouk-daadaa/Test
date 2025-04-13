@@ -16,7 +16,12 @@ class HeaderSection extends StatelessWidget {
     print('HeaderSection rebuilt with unreadCount: ${notificationService.unreadCount}');
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 20, // Account for status bar + padding
+        left: 20,
+        right: 20,
+        bottom: 20,
+      ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -45,7 +50,7 @@ class HeaderSection extends StatelessWidget {
                     ),
                   ),
                   const Text(
-                    'Let\'s start learning!',
+                    "Let's start learning!",
                     style: TextStyle(
                       fontSize: 16,
                       color: Colors.white70,

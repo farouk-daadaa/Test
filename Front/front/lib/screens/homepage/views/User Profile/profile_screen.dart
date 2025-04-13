@@ -233,15 +233,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (shouldLogout == true) {
       try {
         print('Attempting logout from ProfileScreen...');
-        await _authService.logout(context);
-        if (mounted) {
-          print('Logout completed, clearing stack and navigating to /login');
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-                (Route<dynamic> route) => false,
-          );
-        }
+        await _authService.logout(context, skipConfirmation: true);
+        // Navigation is handled in AuthService, so no need to repeat here
       } catch (e) {
         print('Logout error in ProfileScreen: $e');
         if (mounted) {
@@ -254,11 +247,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-          );
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-                (Route<dynamic> route) => false,
           );
         }
       }

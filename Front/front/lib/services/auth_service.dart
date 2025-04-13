@@ -303,60 +303,62 @@ class AuthService with ChangeNotifier {
     return await _secureStorage.read(key: 'auth_token');
   }
 
-  Future<void> logout(BuildContext context) async {
+  Future<void> logout(BuildContext context, {bool skipConfirmation = false}) async {
     // Ensure only one dialog is shown by checking if a dialog is already active
     bool isDialogActive = false;
     if (Navigator.of(context).canPop()) {
       isDialogActive = true;
     }
 
-    if (!isDialogActive) {
-      try {
-        bool confirmLogout = await showDialog(
-          context: context,
-          barrierDismissible: false, // Prevent multiple dialogs
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Confirm Logout'),
-              content: const Text('Are you sure you want to log out?'),
-              actions: <Widget>[
-                TextButton(
-                  child: const Text('Cancel'),
-                  onPressed: () => Navigator.of(context).pop(false),
-                ),
-                TextButton(
-                  child: const Text('Yes'),
-                  onPressed: () => Navigator.of(context).pop(true),
-                ),
-              ],
-            );
-          },
-        ) ?? false;
+    bool confirmLogout = skipConfirmation; // Skip confirmation if specified
 
-        if (confirmLogout) {
-          print('Clearing authentication state...');
-          _token = null;
-          _userRole = null;
-          _instructorStatus = null;
-          _username = null;
-          _email = null; // Clear email
-          _lastCodeSentTime = null;
-          _remainingCodeResendTime = null;
-          await _secureStorage.delete(key: 'auth_token');
-          await _secureStorage.delete(key: 'user_role');
-          await _secureStorage.delete(key: 'instructor_status');
-          await _secureStorage.delete(key: 'user_name');
-          await _secureStorage.delete(key: 'user_email'); // Clear email
-          await _secureStorage.delete(key: 'last_2fa_code_sent');
-          await _secureStorage.delete(key: 'remaining_2fa_code_time');
-          notifyListeners(); // Notify listeners to update the app state
-          print('Navigating to login...');
-          if (Navigator.of(context).mounted) {
-            Navigator.pushNamedAndRemoveUntil(context, '/login', (Route<dynamic> route) => false);
-          } else {
-            print('Navigator is not mounted, forcing navigation');
-            Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
-          }
+    if (!skipConfirmation && !isDialogActive) {
+      confirmLogout = await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Confirm Logout'),
+            content: const Text('Are you sure you want to log out?'),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('Cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+              ),
+              TextButton(
+                child: const Text('Yes'),
+                onPressed: () => Navigator.of(context).pop(true),
+              ),
+            ],
+          );
+        },
+      ) ?? false;
+    }
+
+    if (confirmLogout) {
+      try {
+        print('Clearing authentication state...');
+        _token = null;
+        _userRole = null;
+        _instructorStatus = null;
+        _username = null;
+        _email = null;
+        _lastCodeSentTime = null;
+        _remainingCodeResendTime = null;
+        await _secureStorage.delete(key: 'auth_token');
+        await _secureStorage.delete(key: 'user_role');
+        await _secureStorage.delete(key: 'instructor_status');
+        await _secureStorage.delete(key: 'user_name');
+        await _secureStorage.delete(key: 'user_email');
+        await _secureStorage.delete(key: 'last_2fa_code_sent');
+        await _secureStorage.delete(key: 'remaining_2fa_code_time');
+        notifyListeners();
+        print('Navigating to login...');
+        if (Navigator.of(context).mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (Route<dynamic> route) => false);
+        } else {
+          print('Navigator is not mounted, forcing navigation');
+          Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/login', (Route<dynamic> route) => false);
         }
       } catch (e) {
         print('Logout error: $e');
@@ -375,7 +377,7 @@ class AuthService with ChangeNotifier {
         }
       }
     } else {
-      print('Dialog already active, skipping logout prompt');
+      print('Dialog already active or logout canceled');
     }
   }
 

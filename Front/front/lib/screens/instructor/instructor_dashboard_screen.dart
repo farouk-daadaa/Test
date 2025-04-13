@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import for SystemChrome
+import 'package:flutter/services.dart';
 import 'package:front/screens/instructor/views/CourseAnalyticsView.dart';
 import 'package:front/screens/instructor/views/MyCoursesView.dart';
 import 'package:front/screens/instructor/views/MySessionsView.dart';
@@ -31,8 +31,8 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
     super.initState();
     // Set status bar to transparent with light icons
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent, // Transparent status bar
-      statusBarIconBrightness: Brightness.light, // Light icons for contrast
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
     ));
   }
 
@@ -93,94 +93,95 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
           Expanded(
             child: Column(
               children: [
-                // Custom header section
-                Container(
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top + 20, // Account for status bar + padding
-                    left: 20,
-                    right: 20,
-                    bottom: 20,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.primary,
-                        AppColors.primary.withOpacity(0.8),
-                      ],
+                // Show header only if the Profile tab (index 3) is not selected
+                if (_selectedIndex != 3)
+                  Container(
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).padding.top + 20,
+                      left: 20,
+                      right: 20,
+                      bottom: 20,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Hi, ${authService.username ?? 'Instructor'} 👋',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          AppColors.primary,
+                          AppColors.primary.withOpacity(0.8),
+                        ],
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Hi, ${authService.username ?? 'Instructor'} 👋',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                              const Text(
-                                "Let's manage your courses!",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white70,
+                                const Text(
+                                  "Let's manage your courses!",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white70,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          Stack(
-                            children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.notifications_outlined,
-                                  color: Colors.white,
-                                  size: 28,
+                              ],
+                            ),
+                            Stack(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.notifications_outlined,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const NotificationsScreen(),
+                                      ),
+                                    );
+                                  },
                                 ),
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const NotificationsScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              if (notificationService.unreadCount > 0)
-                                Positioned(
-                                  right: 8,
-                                  top: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      notificationService.unreadCount.toString(),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
+                                if (notificationService.unreadCount > 0)
+                                  Positioned(
+                                    right: 8,
+                                    top: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Text(
+                                        notificationService.unreadCount.toString(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
                 // Main content
                 Expanded(
                   child: Container(
@@ -239,8 +240,8 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   void dispose() {
     // Reset status bar style when leaving the screen
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent, // Reset to default
-      statusBarIconBrightness: Brightness.dark, // Reset to default
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
     ));
     super.dispose();
   }
