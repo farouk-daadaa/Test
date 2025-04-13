@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:front/constants/colors.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -724,53 +725,74 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'My Sessions',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: primaryColor,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchSessions,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? Center(
-        child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
-        ),
-      )
-          : _sessions.isEmpty
-          ? _buildEmptyState()
-          : RefreshIndicator(
-        onRefresh: _fetchSessions,
-        color: primaryColor,
-        child: ListView.builder(
-          padding: const EdgeInsets.all(16),
-          physics: const AlwaysScrollableScrollPhysics(),
-          itemCount: _sessions.length,
-          itemBuilder: (context, index) {
-            final session = _sessions[index];
-            return _buildSessionCard(session);
-          },
-        ),
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showSessionForm(),
-        backgroundColor: primaryColor,
+        backgroundColor: const Color(0xFFDB2777), // Match My Courses
         child: const Icon(Icons.add, color: Colors.white),
         tooltip: 'Create Session',
       ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0), // Match My Courses padding
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(), // Custom header to match My Courses
+            const SizedBox(height: 16), // Match My Courses spacing
+            Expanded(
+              child: _isLoading
+                  ? Center(
+                child: CircularProgressIndicator(
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFDB2777)), // Match My Courses
+                ),
+              )
+                  : _sessions.isEmpty
+                  ? _buildEmptyState()
+                  : RefreshIndicator(
+                onRefresh: _fetchSessions,
+                color: const Color(0xFFDB2777), // Match My Courses
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(0), // Remove extra padding since parent already has it
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: _sessions.length,
+                  itemBuilder: (context, index) {
+                    final session = _sessions[index];
+                    return _buildSessionCard(session);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        const Icon(Icons.event, color: Color(0xFFDB2777), size: 32), // Icon for sessions, matching My Courses style
+        const SizedBox(width: 12), // Match My Courses spacing
+        const Text(
+          'My Sessions',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFFDB2777), // Match My Courses color
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.refresh, color: Color(0xFFDB2777)), // Match My Courses color
+          tooltip: 'Refresh sessions',
+          onPressed: _fetchSessions,
+        ).animate(onPlay: (controller) => controller.repeat()).shimmer(
+          duration: const Duration(seconds: 2),
+          color: const Color(0xFFDB2777).withOpacity(0.2), // Match My Courses shimmer
+        ),
+      ],
     );
   }
 

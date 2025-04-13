@@ -12,11 +12,15 @@ import '../../../../services/image_service.dart';
 import '../../bottom_nav_bar.dart';
 import 'edit_profile_screen.dart';
 import 'dart:io';
-
 import 'help_center_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool isInstructorContext; // Add parameter to determine context
+
+  const ProfileScreen({
+    super.key,
+    this.isInstructorContext = false, // Default to false (student context)
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -111,7 +115,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         throw Exception('Failed to fetch user ID');
       }
 
-      // Show loading indicator
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -144,7 +147,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         success = await _imageService.uploadUserImage(userId, imageFile);
       }
 
-      // Close loading dialog
       if (mounted) Navigator.of(context).pop();
 
       if (success) {
@@ -231,14 +233,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (shouldLogout == true) {
       try {
         print('Attempting logout from ProfileScreen...');
-        await _authService.logout(context); // This already handles navigation in AuthService
+        await _authService.logout(context);
         if (mounted) {
           print('Logout completed, clearing stack and navigating to /login');
-          // Clear the entire stack and navigate to login
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',
-                (Route<dynamic> route) => false, // Removes all previous routes
+                (Route<dynamic> route) => false,
           );
         }
       } catch (e) {
@@ -254,7 +255,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           );
-          // Even on failure, clear stack and go to login
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',
@@ -298,7 +298,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavBar(
+      bottomNavigationBar: widget.isInstructorContext
+          ? null // Hide BottomNavBar in instructor context
+          : BottomNavBar(
         currentIndex: 4,
         onTap: (index) {
           setState(() {
