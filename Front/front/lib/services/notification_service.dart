@@ -53,12 +53,14 @@ class NotificationDTO {
     return DateFormat('MMM dd, yyyy – HH:mm').format(createdAt);
   }
 
-  // Determine if the notification is for a live or scheduled session
+  // Determine the subtype of the notification (e.g., LIVE, SCHEDULED, COURSE)
   String getNotificationSubtype() {
     if (title.startsWith('Session Live:')) {
       return 'LIVE';
     } else if (title.startsWith('New Session:')) {
       return 'SCHEDULED';
+    } else if (type == 'COURSE') {
+      return 'COURSE';
     }
     return 'UNKNOWN';
   }
@@ -71,7 +73,15 @@ class NotificationDTO {
     return sessionIdStr != null ? int.tryParse(sessionIdStr) : null;
   }
 
-  // Format the message for display
+  // Extract the Course ID from the message (e.g., "[Course ID: 123]")
+  int? getCourseId() {
+    final regex = RegExp(r'\[Course ID: (\d+)\]');
+    final match = regex.firstMatch(message);
+    final courseIdStr = match?.group(1);
+    return courseIdStr != null ? int.tryParse(courseIdStr) : null;
+  }
+
+  // Format the message for display based on the notification subtype
   String getFormattedMessage() {
     final subtype = getNotificationSubtype();
     if (subtype == 'LIVE') {
@@ -88,6 +98,12 @@ class NotificationDTO {
       final formattedDate = DateFormat('MMM d, yyyy').format(dateTime);
       final formattedTime = DateFormat('h:mm a').format(dateTime.toLocal());
       return "Instructor $instructor has scheduled '$sessionTitle' on $formattedDate at $formattedTime ($visibility).";
+    } else if (subtype == 'COURSE') {
+      final courseTitleMatch = RegExp(r"published a new course: '([^']+)'").firstMatch(message);
+      final courseTitle = courseTitleMatch?.group(1) ?? 'Unknown Course';
+      final instructorMatch = RegExp(r'Instructor (\w+)').firstMatch(message);
+      final instructor = instructorMatch?.group(1) ?? 'Unknown';
+      return "Instructor $instructor has published a new course: '$courseTitle'. Tap to view.";
     }
     return message; // Fallback for other notification types
   }

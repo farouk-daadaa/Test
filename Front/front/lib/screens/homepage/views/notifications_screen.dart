@@ -6,6 +6,7 @@ import '../../../services/SessionService.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/notification_service.dart';
 import '../../instructor/views/LobbyScreen.dart';
+import '../course_details_screen.dart';
 import 'all_sessions_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -210,6 +211,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 // Handle navigation based on notification type
                 final subtype = notification.getNotificationSubtype();
                 final sessionId = notification.getSessionId();
+                final courseId = notification.getCourseId(); // Extract course ID
                 final username = authService.username;
                 if (username == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -281,6 +283,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const AllSessionsScreen()),
+                  );
+                } else if (subtype == 'COURSE' && courseId != null) {
+                  // Navigate to CourseDetailsScreen for course notifications
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CourseDetailsScreen(courseId: courseId),
+                    ),
                   );
                 }
               },

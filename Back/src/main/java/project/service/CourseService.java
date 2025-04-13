@@ -101,12 +101,13 @@ public class CourseService {
                 .map(UserEntity::getId)
                 .collect(Collectors.toList());
 
-        // Create the notification message
+        // Create the notification message with the Course ID
         String title = "New Course Published";
         String message = String.format(
-                "Instructor %s has published a new course: '%s'. Check it out!",
+                "Instructor %s has published a new course: '%s'. Check it out! [Course ID: %d]",
                 instructor.getUser().getUsername(),
-                course.getTitle()
+                course.getTitle(),
+                course.getId() // Add the course ID
         );
 
         // Use NotificationService to send notifications to followers
