@@ -5,7 +5,9 @@ import '../../../constants/colors.dart';
 import '../../../services/SessionService.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/notification_service.dart';
+import '../../../services/course_service.dart'; // Import CourseService
 import '../../instructor/views/LobbyScreen.dart';
+import '../../instructor/views/instructor_course_details_screen.dart'; // Import InstructorCourseDetailsScreen
 import '../course_details_screen.dart';
 import 'all_sessions_screen.dart';
 
@@ -283,6 +285,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       builder: (context) => CourseDetailsScreen(courseId: courseId),
                     ),
                   );
+                } else if (subtype == 'REVIEW' && courseId != null) {
+                  try {
+                    final courseService = CourseService(baseUrl: 'http://192.168.1.13:8080');
+                    courseService.setToken(token);
+                    final course = await courseService.getCourseDetails(courseId);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const InstructorCourseDetailsScreen(
+                          initialTabIndex: 2, // Select the "Reviews" tab
+                        ),
+                        settings: RouteSettings(arguments: course),
+                      ),
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to load course details: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
                 }
               },
             );

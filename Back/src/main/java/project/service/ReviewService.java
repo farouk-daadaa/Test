@@ -13,6 +13,8 @@ import project.repository.ReviewRepository;
 import project.repository.UserRepository;
 
 import javax.transaction.Transactional;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -35,7 +37,7 @@ public class ReviewService {
     private UserRepository userRepository;
 
     @Autowired
-    private NotificationService notificationService; // Inject NotificationService
+    private NotificationService notificationService;
 
     @Transactional
     public ReviewDTO createReview(Long courseId, Long userId, ReviewDTO reviewDTO) {
@@ -79,8 +81,14 @@ public class ReviewService {
 
         if (!instructorUser.getId().equals(userId)) {
             String title = "New Review";
-            String message = String.format(Locale.US, "A new review has been added to your course '%s' by %s. Rating: %.1f",
-                    course.getTitle(), user.getUsername(), review.getRating());
+            String message = String.format(
+                    Locale.US,
+                    "A new review has been added to your course '%s' by %s. Rating: %.1f [Course ID: %d]",
+                    course.getTitle(),
+                    user.getUsername(),
+                    review.getRating(),
+                    course.getId()
+            );
             logger.info("Creating notification for instructor user {}: {}", instructorUser.getId(), message);
             notificationService.createNotification(
                     instructorUser.getId(),
@@ -126,8 +134,14 @@ public class ReviewService {
 
         if (!instructorUser.getId().equals(userId)) {
             String title = "Review Updated";
-            String message = String.format(Locale.US, "A review for your course '%s' by %s has been updated. New Rating: %.1f",
-                    course.getTitle(), review.getUser().getUsername(), review.getRating());
+            String message = String.format(
+                    Locale.US,
+                    "A review for your course '%s' by %s has been updated. New Rating: %.1f [Course ID: %d]",
+                    course.getTitle(),
+                    review.getUser().getUsername(),
+                    review.getRating(),
+                    course.getId()
+            );
             logger.info("Creating notification for instructor user {}: {}", instructorUser.getId(), message);
             notificationService.createNotification(
                     instructorUser.getId(),
@@ -157,7 +171,6 @@ public class ReviewService {
         reviewRepository.delete(review);
         updateCourseRating(course);
 
-        // Create a notification for the instructor
         Instructor instructor = course.getInstructor();
         if (instructor == null) {
             logger.error("Course with ID {} is not associated with an instructor", course.getId());
@@ -172,8 +185,13 @@ public class ReviewService {
 
         if (!instructorUser.getId().equals(userId)) {
             String title = "Review Deleted";
-            String message = String.format(Locale.US, "A review for your course '%s' by %s has been deleted.",
-                    course.getTitle(), user.getUsername());
+            String message = String.format(
+                    Locale.US,
+                    "A review for your course '%s' by %s has been deleted. [Course ID: %d]",
+                    course.getTitle(),
+                    user.getUsername(),
+                    course.getId()
+            );
             logger.info("Creating notification for instructor user {}: {}", instructorUser.getId(), message);
             notificationService.createNotification(
                     instructorUser.getId(),
@@ -211,7 +229,10 @@ public class ReviewService {
                     .mapToDouble(Review::getRating)
                     .average()
                     .orElse(0.0);
-            course.setRating(averageRating);
+            // Round to 1 decimal place
+            BigDecimal roundedRating = BigDecimal.valueOf(averageRating)
+                    .setScale(1, RoundingMode.HALF_UP);
+            course.setRating(roundedRating.doubleValue());
             course.setTotalReviews(reviews.size());
         } else {
             course.setRating(0.0);

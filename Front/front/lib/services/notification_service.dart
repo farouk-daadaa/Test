@@ -60,6 +60,8 @@ class NotificationDTO {
       return 'SCHEDULED';
     } else if (type == 'COURSE') {
       return 'COURSE';
+    } else if (type == 'REVIEW') {
+      return 'REVIEW';
     }
     return 'UNKNOWN';
   }
@@ -100,6 +102,22 @@ class NotificationDTO {
       final instructorMatch = RegExp(r'Instructor (\w+)').firstMatch(message);
       final instructor = instructorMatch?.group(1) ?? 'Unknown';
       return "Instructor $instructor has published a new course: '$courseTitle'. Tap to view.";
+    } else if (subtype == 'REVIEW') {
+      final courseTitleMatch = RegExp(r"course '([^']+)'").firstMatch(message);
+      final courseTitle = courseTitleMatch?.group(1) ?? 'Unknown Course';
+      final userMatch = RegExp(r'by (\w+)').firstMatch(message);
+      final username = userMatch?.group(1) ?? 'Unknown User';
+      if (title == 'New Review') {
+        final ratingMatch = RegExp(r'Rating: (\d\.\d)').firstMatch(message);
+        final rating = ratingMatch?.group(1) ?? 'N/A';
+        return "$username reviewed your course '$courseTitle' with a rating of $rating. Tap to view.";
+      } else if (title == 'Review Updated') {
+        final ratingMatch = RegExp(r'New Rating: (\d\.\d)').firstMatch(message);
+        final rating = ratingMatch?.group(1) ?? 'N/A';
+        return "$username updated their review for your course '$courseTitle' with a new rating of $rating. Tap to view.";
+      } else if (title == 'Review Deleted') {
+        return "$username deleted their review for your course '$courseTitle'. Tap to view.";
+      }
     }
     return message;
   }

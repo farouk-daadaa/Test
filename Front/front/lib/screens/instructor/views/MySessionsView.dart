@@ -724,7 +724,35 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
     }
   }
 
-  @override
+  List<SessionDTO> _sortSessions(List<SessionDTO> sessions) {
+    final now = DateTime.now();
+    return sessions
+      ..sort((a, b) {
+        int priorityA;
+        if (now.isAfter(a.startTime) && now.isBefore(a.endTime)) {
+          priorityA = 1; // LIVE
+        } else if (now.isBefore(a.startTime)) {
+          priorityA = 2; // UPCOMING
+        } else {
+          priorityA = 3; // ENDED
+        }
+
+        int priorityB;
+        if (now.isAfter(b.startTime) && now.isBefore(b.endTime)) {
+          priorityB = 1; // LIVE
+        } else if (now.isBefore(b.startTime)) {
+          priorityB = 2; // UPCOMING
+        } else {
+          priorityB = 3; // ENDED
+        }
+
+        if (priorityA != priorityB) {
+          return priorityA.compareTo(priorityB);
+        }
+        return a.startTime.compareTo(b.startTime);
+      });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -758,6 +786,7 @@ class _MySessionsViewState extends State<MySessionsView> implements HMSUpdateLis
                   physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: _sessions.length,
                   itemBuilder: (context, index) {
+                    final sortedSessions = _sortSessions(_sessions);
                     final session = _sessions[index];
                     return _buildSessionCard(session);
                   },
