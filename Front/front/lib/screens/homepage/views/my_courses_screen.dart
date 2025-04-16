@@ -7,7 +7,6 @@ import '../../../services/auth_service.dart';
 import '../../../services/course_service.dart';
 import '../../../services/enrollment_service.dart';
 import '../../../services/admin_service.dart';
-import '../bottom_nav_bar.dart';
 
 class MyCoursesScreen extends StatefulWidget {
   final Function(int)? onIndexChanged;
@@ -185,25 +184,7 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> with SingleTickerProv
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavBar(
-        currentIndex: 1,
-        onTap: (index) {
-          switch (index) {
-            case 0:
-              Navigator.pushReplacementNamed(context, '/home');
-              break;
-            case 2:
-              Navigator.pushReplacementNamed(context, '/bookmarks');
-              break;
-            case 3:
-              Navigator.pushReplacementNamed(context, '/chatbot');
-              break;
-            case 4:
-              Navigator.pushReplacementNamed(context, '/profile');
-              break;
-          }
-        },
-      ),
+      // Remove bottomNavigationBar to avoid duplication
     );
   }
 
@@ -212,8 +193,7 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> with SingleTickerProv
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: Colors.black),
         onPressed: () {
-          widget.onIndexChanged?.call(0);
-          Navigator.pop(context);
+          widget.onIndexChanged?.call(0); // Notify HomeScreen to switch to Home tab
         },
       ),
       title: const Text(
@@ -363,7 +343,7 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> with SingleTickerProv
                   if (!isCompleted)
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/home');
+                        widget.onIndexChanged?.call(0); // Switch to Home tab
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,

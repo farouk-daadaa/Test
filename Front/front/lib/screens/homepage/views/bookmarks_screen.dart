@@ -8,10 +8,11 @@ import '../../../services/auth_service.dart';
 import '../../../services/bookmark_service.dart';
 import '../../../services/course_service.dart';
 import '../../../services/image_service.dart'; // Import ImageService
-import '../bottom_nav_bar.dart';
 
 class BookmarksScreen extends StatefulWidget {
-  const BookmarksScreen({super.key});
+  final Function(int)? onIndexChanged; // Add callback to change tab index
+
+  const BookmarksScreen({super.key, this.onIndexChanged});
 
   @override
   State<BookmarksScreen> createState() => _BookmarksScreenState();
@@ -81,12 +82,12 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
   Future<void> _fetchInstructorImages(String token) async {
     for (var course in _bookmarkedCourses) {
       if (course.instructorName != null && !_instructorImages.containsKey(course.instructorName!)) {
-        final instructorId = await _authService.getUserIdByUsername(course.instructorName!); // Use class-level _authService
+        final instructorId = await _authService.getUserIdByUsername(course.instructorName!);
         if (instructorId != null) {
-          print('Fetching image for ${course.instructorName} with ID: $instructorId'); // Debug log
+          print('Fetching image for ${course.instructorName} with ID: $instructorId');
           final imageBytes = await imageService.getUserImage(context, instructorId);
           if (imageBytes != null) {
-            print('Image fetched for ${course.instructorName}: ${imageBytes.length} bytes'); // Debug log
+            print('Image fetched for ${course.instructorName}: ${imageBytes.length} bytes');
             setState(() {
               _instructorImages[course.instructorName!] = imageBytes;
             });
@@ -212,25 +213,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           Expanded(child: _buildCourseList()),
         ],
       ),
-      bottomNavigationBar: BottomNavBar(
-        currentIndex: 2, // Set to Bookmarks index
-        onTap: (index) {
-          switch (index) {
-            case 0:
-              Navigator.pushReplacementNamed(context, '/home');
-              break;
-            case 1:
-              Navigator.pushReplacementNamed(context, '/my-courses');
-              break;
-            case 3:
-              Navigator.pushReplacementNamed(context, '/chatbot');
-              break;
-            case 4:
-              Navigator.pushReplacementNamed(context, '/profile');
-              break;
-          }
-        },
-      ),
+      // Remove bottomNavigationBar to avoid duplication
     );
   }
 
@@ -268,7 +251,9 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     return AppBar(
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: Colors.black),
-        onPressed: () => Navigator.pop(context), // Simple back navigation
+        onPressed: () {
+          widget.onIndexChanged?.call(0); // Notify HomeScreen to switch to Home tab
+        },
       ),
       title: const Text(
         'Bookmarks',
@@ -390,74 +375,74 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
   Widget _buildLoadingState() {
     return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 6,
-        itemBuilder: (_, __) => Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: Container(
-            height: 140,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: 6,
+          itemBuilder: (_, __) => Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Container(
+              height: 140,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: 150,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: 150,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: 80,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(4),
+                          const SizedBox(height: 16),
+                          Container(
+                            width: 80,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
+        );
   }
 
   Widget _buildErrorState() {
@@ -591,7 +576,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                     const SizedBox(height: 32),
                     ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pushReplacementNamed(context, '/popular-courses');
+                        widget.onIndexChanged?.call(0); // Switch to Home tab
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -734,10 +719,10 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
                   'courseId': course.id,
                   'onEnrollmentChanged': () async {
                     final token = await Provider.of<AuthService>(context, listen: false).getToken();
-                    if (token != null) {
-                      await _fetchBookmarkedCourses(token);
+                    if (token != null ) {
+                    await _fetchBookmarkedCourses(token);
                     }
-                  },
+                    },
                 },
               );
             },

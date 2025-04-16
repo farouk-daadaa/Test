@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data'; // Add this for Uint8List
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/chatbot_service.dart';
+import '../../services/image_service.dart'; // Add ImageService import
 
 class ChatBotScreen extends StatefulWidget {
   const ChatBotScreen({Key? key}) : super(key: key);
@@ -16,11 +18,16 @@ class ChatBotScreen extends StatefulWidget {
 
 class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
-  List<Map<String, dynamic>> _messages = []; // Remove `final` to allow reassignment
+  List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
+  bool _isMessagesLoading = true;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   final ScrollController _scrollController = ScrollController();
+  late AuthService _authService;
+  late ImageService _imageService;
+  Uint8List? _userImage; // Variable to store the user's image
+  String? _username;
 
   @override
   void initState() {
@@ -32,29 +39,78 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
-    // Load messages synchronously in initState
+    _authService = Provider.of<AuthService>(context, listen: false);
+    _imageService = ImageService();
+    _loadUserData(); // Load user data (image and username)
     _loadMessages();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      await _authService.loadToken();
+      final token = _authService.token;
+      if (token == null) {
+        throw Exception('No authentication token found');
+      }
+      _imageService.setToken(token);
+
+      _username = _authService.username ?? 'Unknown User';
+      final userId = await _authService.getUserIdByUsername(_username ?? '');
+      if (userId != null) {
+        final imageBytes = await _imageService.getUserImage(context, userId);
+        if (mounted) {
+          setState(() {
+            _userImage = imageBytes;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+      if (mounted) {
+        setState(() {
+          _userImage = null;
+        });
+      }
+    }
+  }
+
+  String _getInitials(String name) {
+    if (name.isEmpty) return '??';
+    final nameParts = name.trim().split(' ');
+    if (nameParts.length >= 2) {
+      return '${nameParts[0][0]}${nameParts[1][0]}'.toUpperCase();
+    } else if (nameParts.length == 1 && nameParts[0].isNotEmpty) {
+      return nameParts[0][0].toUpperCase();
+    }
+    return '??';
   }
 
   Future<void> _loadMessages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final messagesJson = prefs.getString('chat_messages');
-      print('Loaded messages JSON: $messagesJson'); // Debug print
+      print('Loaded messages JSON: $messagesJson');
       if (messagesJson != null && messagesJson.isNotEmpty) {
         final List<dynamic> messagesList = jsonDecode(messagesJson);
         setState(() {
           _messages = messagesList.map((msg) => Map<String, dynamic>.from(msg)).toList();
-          print('Messages loaded: ${_messages.length} messages'); // Debug print
+          _isMessagesLoading = false;
+          print('Messages loaded: ${_messages.length} messages');
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToBottom();
         });
       } else {
         print('No messages found in SharedPreferences');
+        setState(() {
+          _isMessagesLoading = false;
+        });
       }
     } catch (e) {
       print('Error loading messages: $e');
+      setState(() {
+        _isMessagesLoading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error loading chat history: $e'),
@@ -68,7 +124,7 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
     try {
       final prefs = await SharedPreferences.getInstance();
       final messagesJson = jsonEncode(_messages);
-      print('Saving messages: $messagesJson'); // Debug print
+      print('Saving messages: $messagesJson');
       final success = await prefs.setString('chat_messages', messagesJson);
       if (success) {
         print('Messages saved successfully');
@@ -228,7 +284,11 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
           child: Column(
             children: [
               Expanded(
-                child: _messages.isEmpty
+                child: _isMessagesLoading
+                    ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                )
+                    : _messages.isEmpty
                     ? const Center(
                   child: Text(
                     'No messages yet. Start chatting!',
@@ -275,9 +335,8 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
                                 children: [
                                   Container(
                                     constraints: BoxConstraints(
-                                      maxWidth: MediaQuery.of(context)
-                                          .size
-                                          .width *
+                                      maxWidth:
+                                      MediaQuery.of(context).size.width *
                                           0.75,
                                     ),
                                     padding: const EdgeInsets.all(12),
@@ -285,8 +344,7 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
                                       color: isUser
                                           ? AppColors.primary
                                           : Colors.white,
-                                      borderRadius:
-                                      BorderRadius.circular(16),
+                                      borderRadius: BorderRadius.circular(16),
                                       boxShadow: [
                                         BoxShadow(
                                           color:
@@ -324,11 +382,26 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
                                 padding: const EdgeInsets.only(left: 8),
                                 child: CircleAvatar(
                                   radius: 16,
-                                  backgroundColor: Colors.grey[200],
-                                  child: Icon(
-                                    Icons.person,
-                                    color: Colors.grey[600],
-                                    size: 20,
+                                  backgroundColor: _userImage != null
+                                      ? Colors.transparent
+                                      : AppColors.primary,
+                                  child: _userImage != null
+                                      ? ClipOval(
+                                    child: Image.memory(
+                                      _userImage!,
+                                      width: 32,
+                                      height: 32,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                      : Text(
+                                    _getInitials(
+                                        _username ?? 'Unknown User'),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ),

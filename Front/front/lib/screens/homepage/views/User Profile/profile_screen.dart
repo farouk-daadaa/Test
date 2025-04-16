@@ -9,17 +9,18 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../constants/colors.dart';
 import '../../../../services/auth_service.dart';
 import '../../../../services/image_service.dart';
-import '../../bottom_nav_bar.dart';
 import 'edit_profile_screen.dart';
 import 'dart:io';
 import 'help_center_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool isInstructorContext; // Add parameter to determine context
+  final Function(int)? onIndexChanged; // Add callback to change tab index
 
   const ProfileScreen({
     super.key,
     this.isInstructorContext = false, // Default to false (student context)
+    this.onIndexChanged,
   });
 
   @override
@@ -286,31 +287,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: widget.isInstructorContext
-          ? null // Hide BottomNavBar in instructor context
-          : BottomNavBar(
-        currentIndex: 4,
-        onTap: (index) {
-          setState(() {
-            switch (index) {
-              case 0:
-                Navigator.pushReplacementNamed(context, '/home');
-                break;
-              case 1:
-                Navigator.pushReplacementNamed(context, '/my-courses');
-                break;
-              case 2:
-                Navigator.pushReplacementNamed(context, '/bookmarks');
-                break;
-              case 3:
-                Navigator.pushReplacementNamed(context, '/chatbot');
-                break;
-              case 4:
-                break;
-            }
-          });
-        },
-      ),
+      // Remove bottomNavigationBar to avoid duplication
+      // The isInstructorContext check is no longer needed since HomeScreen provides the BottomNavBar
     );
   }
 
