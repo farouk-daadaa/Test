@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data'; // Add this for Uint8List
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import '../../constants/colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/chatbot_service.dart';
-import '../../services/image_service.dart'; // Add ImageService import
+import '../../services/image_service.dart';
 
 class ChatBotScreen extends StatefulWidget {
   const ChatBotScreen({Key? key}) : super(key: key);
@@ -26,7 +26,7 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
   final ScrollController _scrollController = ScrollController();
   late AuthService _authService;
   late ImageService _imageService;
-  Uint8List? _userImage; // Variable to store the user's image
+  Uint8List? _userImage;
   String? _username;
 
   @override
@@ -41,8 +41,11 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
     );
     _authService = Provider.of<AuthService>(context, listen: false);
     _imageService = ImageService();
-    _loadUserData(); // Load user data (image and username)
-    _loadMessages();
+    _clearMessages(); // Clear messages on app start
+    _loadUserData();
+    setState(() {
+      _isMessagesLoading = false; // No messages to load, set to false immediately
+    });
   }
 
   Future<void> _loadUserData() async {
@@ -85,38 +88,24 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
     return '??';
   }
 
-  Future<void> _loadMessages() async {
+  Future<void> _clearMessages() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final messagesJson = prefs.getString('chat_messages');
-      print('Loaded messages JSON: $messagesJson');
-      if (messagesJson != null && messagesJson.isNotEmpty) {
-        final List<dynamic> messagesList = jsonDecode(messagesJson);
-        setState(() {
-          _messages = messagesList.map((msg) => Map<String, dynamic>.from(msg)).toList();
-          _isMessagesLoading = false;
-          print('Messages loaded: ${_messages.length} messages');
-        });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToBottom();
-        });
-      } else {
-        print('No messages found in SharedPreferences');
-        setState(() {
-          _isMessagesLoading = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading messages: $e');
+      await prefs.remove('chat_messages');
       setState(() {
-        _isMessagesLoading = false;
+        _messages = [];
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading chat history: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      print('Messages cleared on app start');
+    } catch (e) {
+      print('Error clearing messages: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error clearing chat: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -133,31 +122,14 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
       }
     } catch (e) {
       print('Error saving messages: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving chat history: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  Future<void> _clearMessages() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('chat_messages');
-      setState(() {
-        _messages = [];
-      });
-      print('Messages cleared');
-    } catch (e) {
-      print('Error clearing messages: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error clearing chat: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving chat history: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -196,16 +168,18 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -230,21 +204,25 @@ class _ChatBotScreenState extends State<ChatBotScreen> with SingleTickerProvider
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.white,
-                child: Icon(
-                  Icons.smart_toy,
-                  color: AppColors.primary,
-                  size: 20,
+          title: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.white,
+                  child: Icon(
+                    Icons.smart_toy,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              const Text('9antraBot'),
-            ],
+                const SizedBox(width: 8),
+                const Text('9antraBot'),
+              ],
+            ),
           ),
+
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           actions: [
