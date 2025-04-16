@@ -223,7 +223,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               Navigator.pushReplacementNamed(context, '/my-courses');
               break;
             case 3:
-              Navigator.pushReplacementNamed(context, '/chat');
+              Navigator.pushReplacementNamed(context, '/chatbot');
               break;
             case 4:
               Navigator.pushReplacementNamed(context, '/profile');

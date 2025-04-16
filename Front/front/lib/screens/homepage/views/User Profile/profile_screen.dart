@@ -303,7 +303,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Navigator.pushReplacementNamed(context, '/bookmarks');
                 break;
               case 3:
-                Navigator.pushReplacementNamed(context, '/chat');
+                Navigator.pushReplacementNamed(context, '/chatbot');
                 break;
               case 4:
                 break;

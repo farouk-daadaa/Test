@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/all_instructors_screen.dart';
 import 'package:front/screens/homepage/views/all_sessions_screen.dart';
+import 'package:front/screens/homepage/views/bookmarks_screen.dart';
 import 'package:front/screens/homepage/views/instructor_profile_screen.dart';
+import 'package:front/screens/homepage/views/my_courses_screen.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +24,7 @@ import '../../services/SessionService.dart';
 import '../instructor/views/LobbyScreen.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
+import 'chatbot_screen.dart';
 import 'course_card.dart';
 import 'header_section.dart';
 import 'views/ongoing_courses_screen.dart';
@@ -137,6 +140,14 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _recentSearches = [];
   List<String> _suggestions = [];
   final GlobalKey _searchContainerKey = GlobalKey();
+
+  static final List<Widget> _screens = [
+    Container(), // Placeholder for the home content (will be built in the body)
+    const MyCoursesScreen(),
+    const BookmarksScreen(),
+    const ChatBotScreen(),
+    const ProfileScreen(),
+  ];
 
   @override
   void initState() {
@@ -452,49 +463,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _selectedIndex = index;
     });
-    switch (index) {
-      case 1:
-        Navigator.pushNamed(
-          context,
-          '/my-courses',
-          arguments: (int newIndex) {
-            setState(() {
-              _selectedIndex = newIndex;
-            });
-          },
-        ).then((_) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        });
-        break;
-      case 2:
-        Navigator.pushNamed(context, '/bookmarks').then((_) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        });
-        break;
-      case 3:
-        Navigator.pushNamed(context, '/chat').then((_) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        });
-        break;
-      case 4:
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const ProfileScreen(),
-          ),
-        ).then((_) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        });
-        break;
-    }
   }
 
   void _onSearchFocusChanged() {
@@ -711,45 +679,57 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: IndexedStack(
+        index: _selectedIndex,
         children: [
-          const HeaderSection(), // Header extends behind the status bar
-          Expanded(
-            child: SafeArea(
-              top: false, // Allow header to extend to the top
-              bottom: true, // Respect bottom safe area for bottom nav bar
-              child: RefreshIndicator(
-                onRefresh: () async {
-                  await _refreshAllData(null);
-                },
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSearchBar(),
-                      CategoriesSection(
-                        allCourses: _popularCourses,
-                        onCategorySelected: _openCategoryScreen,
+          // Home tab content
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const HeaderSection(),
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  bottom: true,
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      await _refreshAllData(null);
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSearchBar(),
+                          CategoriesSection(
+                            allCourses: _popularCourses,
+                            onCategorySelected: _openCategoryScreen,
+                          ),
+                          _buildPopularCourses(),
+                          _buildTopInstructors(),
+                          if (_enrolledCourses.any((data) =>
+                          (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
+                            Column(
+                              children: [
+                                _buildContinueLearning(),
+                                const SizedBox(height: 20),
+                                _buildLiveSessions(),
+                                const SizedBox(height: 80),
+                              ],
+                            ),
+                        ],
                       ),
-                      _buildPopularCourses(),
-                      _buildTopInstructors(),
-                      if (_enrolledCourses.any((data) => (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
-                        Column(
-                          children: [
-                            _buildContinueLearning(),
-                            const SizedBox(height: 20),
-                            _buildLiveSessions(),
-                            const SizedBox(height: 80),
-                          ],
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
+          // Other tabs (My Courses, Bookmarks, Chat, Profile)
+          _screens[1],
+          _screens[2],
+          _screens[3],
+          _screens[4],
         ],
       ),
       bottomNavigationBar: BottomNavBar(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/screens/admin/AdminDashboardScreen.dart';
+import 'package:front/screens/homepage/chatbot_screen.dart';
 import 'package:front/screens/homepage/course_details_screen.dart';
 import 'package:front/screens/homepage/views/User%20Profile/profile_screen.dart';
 import 'package:front/screens/homepage/views/bookmarks_screen.dart';
@@ -22,6 +23,7 @@ import 'package:front/auth/signup_screen.dart';
 import 'package:front/services/admin_service.dart';
 import 'package:front/services/auth_service.dart';
 import 'package:front/screens/homepage/HomeScreen.dart';
+import 'package:front/services/chatbot_service.dart';
 import 'package:front/services/course_service.dart';
 import 'package:front/services/notification_service.dart';
 import 'package:front/services/review_service.dart';
@@ -62,6 +64,9 @@ class AppRoot extends StatelessWidget {
         ),
         Provider<SessionService>(
           create: (_) => SessionService(baseUrl: 'http://192.168.1.13:8080'),
+        ),
+        Provider<ChatBotService>( // Add ChatBotService provider
+          create: (_) => ChatBotService(baseUrl: 'http://192.168.1.13:8080'),
         ),
         ChangeNotifierProvider<NotificationService>(
           create: (_) => notificationService,
@@ -119,6 +124,7 @@ class MyApp extends StatelessWidget {
         '/admin-dashboard': (context) => const AdminDashboardScreen(),
         '/instructor-dashboard': (context) => const InstructorDashboardScreen(),
         '/my_sessions': (context) => const MySessionsView(),
+        '/chatbot': (context) => const ChatBotScreen(),
         '/course-details': (context) {
           final args = ModalRoute.of(context)!.settings.arguments;
           if (args is int) {

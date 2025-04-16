@@ -196,7 +196,7 @@ class _MyCoursesScreenState extends State<MyCoursesScreen> with SingleTickerProv
               Navigator.pushReplacementNamed(context, '/bookmarks');
               break;
             case 3:
-              Navigator.pushReplacementNamed(context, '/chat');
+              Navigator.pushReplacementNamed(context, '/chatbot');
               break;
             case 4:
               Navigator.pushReplacementNamed(context, '/profile');

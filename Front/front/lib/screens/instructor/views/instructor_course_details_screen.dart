@@ -11,8 +11,8 @@ import 'package:provider/provider.dart';
 import 'package:front/services/image_service.dart';
 
 class InstructorCourseDetailsScreen extends StatefulWidget {
-  const InstructorCourseDetailsScreen({Key? key}) : super(key: key);
-
+  final int? initialTabIndex;
+  const InstructorCourseDetailsScreen({Key? key, this.initialTabIndex,}) : super(key: key);
   @override
   State<InstructorCourseDetailsScreen> createState() => _InstructorCourseDetailsScreenState();
 }
@@ -37,7 +37,7 @@ class _InstructorCourseDetailsScreenState extends State<InstructorCourseDetailsS
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex ?? 0,);
     _initializeServices();
   }
 
