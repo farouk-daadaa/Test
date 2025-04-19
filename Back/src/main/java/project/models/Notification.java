@@ -40,7 +40,7 @@ public class Notification {
     private NotificationType type;
 
     public enum NotificationType {
-        SESSION, COURSE, SYSTEM, FOLLOWERS, REVIEW, CATEGORY
+        SESSION, COURSE, SYSTEM, FOLLOWERS, REVIEW, CATEGORY, EVENT
     }
 
     @PrePersist

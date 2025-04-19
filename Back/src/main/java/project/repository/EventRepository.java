@@ -7,10 +7,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import project.models.Event;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 @Repository
 public interface EventRepository extends JpaRepository<Event, Long> {
-    Page<Event> findAll(Pageable pageable); // Added for pagination
+    Page<Event> findAll(Pageable pageable);
 
     @Query("SELECT e FROM Event e WHERE :status IS NULL OR e.status = :status")
     Page<Event> findByStatus(Event.EventStatus status, Pageable pageable);
+
+    @Query("SELECT e FROM Event e WHERE e.startDateTime BETWEEN :start AND :end")
+    List<Event> findByStartDateTimeBetween(LocalDateTime start, LocalDateTime end);
 }
