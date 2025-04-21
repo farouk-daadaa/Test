@@ -29,6 +29,7 @@ import 'package:front/services/notification_service.dart';
 import 'package:front/services/review_service.dart';
 import 'package:front/services/SessionService.dart';
 import 'package:provider/provider.dart';
+import 'package:front/services/event_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +68,9 @@ class AppRoot extends StatelessWidget {
         ),
         Provider<ChatBotService>( // Add ChatBotService provider
           create: (_) => ChatBotService(baseUrl: 'http://192.168.1.13:8080'),
+        ),
+        Provider<EventService>( // Add this provider
+          create: (_) => EventService(baseUrl: 'http://192.168.1.13:8080'),
         ),
         ChangeNotifierProvider<NotificationService>(
           create: (_) => notificationService,

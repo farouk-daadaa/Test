@@ -1,10 +1,10 @@
-// lib/screens/admin/admin_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import 'views/all_instructors_view.dart';
 import 'views/students_view.dart';
 import 'views/categories_view.dart';
+import 'views/events_view.dart'; // Add this import
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({Key? key}) : super(key: key);
@@ -16,11 +16,8 @@ class AdminDashboardScreen extends StatefulWidget {
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedIndex = 0;
 
-  // Function to show a confirmation dialog before logging out
   Future<void> _confirmLogout(BuildContext context) async {
     final authService = Provider.of<AuthService>(context, listen: false);
-
-    // Show a confirmation dialog
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -28,18 +25,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         content: Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false), // Cancel
+            onPressed: () => Navigator.of(context).pop(false),
             child: Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true), // Yes
+            onPressed: () => Navigator.of(context).pop(true),
             child: Text('Yes'),
           ),
         ],
       ),
     );
 
-    // If the user confirms logout, proceed with the logout process
     if (shouldLogout == true) {
       await authService.logout(context);
       Navigator.of(context).pushReplacementNamed('/login');
@@ -60,7 +56,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           IconButton(
             icon: Icon(Icons.logout),
             tooltip: 'Logout',
-            onPressed: () => _confirmLogout(context), // Call the confirmation dialog
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -103,6 +99,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   selectedIcon: Icon(Icons.category),
                   label: Text('Categories'),
                 ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.event),
+                  selectedIcon: Icon(Icons.event),
+                  label: Text('Events'),
+                ),
               ],
             ),
           Expanded(
@@ -133,6 +134,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             icon: Icon(Icons.category),
             label: 'Categories',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.event),
+            label: 'Events',
+          ),
         ],
       ),
     );
@@ -153,6 +158,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return StudentsView(key: ValueKey('students'));
       case 2:
         return CategoriesView(key: ValueKey('categories'));
+      case 3:
+        return EventsView(key: ValueKey('events'));
       default:
         return Center(child: Text('Select a view'));
     }

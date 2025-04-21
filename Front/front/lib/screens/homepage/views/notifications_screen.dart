@@ -453,6 +453,8 @@ class NotificationCard extends StatelessWidget {
         return Icons.star;
       case 'CATEGORY':
         return Icons.category;
+      case 'EVENT':
+        return Icons.event;
       default:
         return Icons.notifications;
     }
