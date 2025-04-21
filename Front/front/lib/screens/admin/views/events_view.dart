@@ -33,7 +33,6 @@ class _EventsViewState extends State<EventsView> {
         _eventsFuture = _eventService.getEvents();
       });
     } else {
-      // No token, redirect to login
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Navigator.of(context).pushReplacementNamed('/login');
       });
@@ -56,7 +55,6 @@ class _EventsViewState extends State<EventsView> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            // Handle 401 Unauthorized specifically
             if (snapshot.error.toString().contains('Unauthorized')) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 Provider.of<AuthService>(context, listen: false).logout(context);
@@ -88,12 +86,17 @@ class _EventsViewState extends State<EventsView> {
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (value) => _handleMenuAction(context, value, event),
-                    itemBuilder: (context) => [
-                      PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      PopupMenuItem(value: 'attendance', child: Text('View Attendance')),
-                      PopupMenuItem(value: 'scan', child: Text('Scan QR Code')),
-                    ],
+                    itemBuilder: (context) {
+                      final items = [
+                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        PopupMenuItem(value: 'scan', child: Text('Scan QR Code')),
+                      ];
+                      if (!event.isOnline) {
+                        items.insert(2, PopupMenuItem(value: 'attendance', child: Text('View Attendance')));
+                      }
+                      return items;
+                    },
                   ),
                 ),
               );
@@ -116,7 +119,11 @@ class _EventsViewState extends State<EventsView> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => AttendanceView(eventId: event.id, eventTitle: event.title),
+            builder: (context) => AttendanceView(
+              eventId: event.id,
+              eventTitle: event.title,
+              isOnline: event.isOnline,
+            ),
           ),
         );
         break;

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 
 class EventDTO {
   final int id;
@@ -8,7 +9,7 @@ class EventDTO {
   final String description;
   final DateTime startDateTime;
   final DateTime endDateTime;
-  final bool isOnline; // Kept as non-nullable, default to false if null
+  final bool isOnline;
   final String? location;
   final String? meetingLink;
   final String? imageUrl;
@@ -40,7 +41,7 @@ class EventDTO {
       description: json['description'],
       startDateTime: DateTime.parse(json['startDateTime']),
       endDateTime: DateTime.parse(json['endDateTime']),
-      isOnline: json['online'] ?? false, // Use 'online' key, default to false if null
+      isOnline: json['online'] ?? false,
       location: json['location'],
       meetingLink: json['meetingLink'],
       imageUrl: json['imageUrl'],
@@ -57,7 +58,7 @@ class EventDTO {
       'description': description,
       'startDateTime': startDateTime.toIso8601String(),
       'endDateTime': endDateTime.toIso8601String(),
-      'online': isOnline, // Use 'online' key for backend
+      'online': isOnline,
       'location': location,
       'maxParticipants': maxParticipants,
     };
@@ -92,21 +93,27 @@ class JoinEventResponse {
 }
 
 class AttendanceDTO {
+  final int? studentId;
   final String username;
-  final String email;
-  final DateTime checkInTime;
+  final String? email; // Nullable to handle missing email
+  final DateTime? checkInTime; // Nullable to handle no check-in
+  final bool checkedIn;
 
   AttendanceDTO({
+    this.studentId,
     required this.username,
-    required this.email,
-    required this.checkInTime,
+    this.email,
+    this.checkInTime,
+    required this.checkedIn,
   });
 
   factory AttendanceDTO.fromJson(Map<String, dynamic> json) {
     return AttendanceDTO(
-      username: json['username'],
+      studentId: json['studentId'],
+      username: json['username'] ?? '',
       email: json['email'],
-      checkInTime: DateTime.parse(json['checkInTime']),
+      checkInTime: json['checkInTime'] != null ? DateTime.parse(json['checkInTime']) : null,
+      checkedIn: json['checkedIn'] ?? false,
     );
   }
 }
@@ -221,15 +228,16 @@ class EventService {
     try {
       debugPrint('EventService: Exporting attendance for event $eventId');
       final response = await _dio.get(
-        '/api/events/$eventId/attendance',
+        '/api/events/$eventId/attendance/csv', // Updated endpoint
         options: Options(
-          responseType: ResponseType.plain,
-          headers: {'Accept': 'text/csv'},
+          responseType: ResponseType.plain, // Expect plain text (Base64)
         ),
       );
       debugPrint('EventService: Export attendance response: ${response.statusCode}, data: ${response.data}');
       if (response.statusCode == 200) {
-        return response.data;
+        // Decode Base64 data
+        final decodedData = utf8.decode(base64Decode(response.data));
+        return decodedData;
       }
       throw Exception('Failed to export attendance: ${response.statusCode}');
     } catch (e) {
@@ -270,6 +278,12 @@ class EventService {
       }
       if (e.response?.statusCode == 404) {
         return Exception('Event not found');
+      }
+      if (e.response?.statusCode == 406) {
+        return Exception('Invalid request format for CSV export');
+      }
+      if (e.response?.statusCode == 500 && e.response?.data['message']?.contains('Attendance export is only available for in-person events') == true) {
+        return Exception('Attendance not available for online events');
       }
       return Exception(e.response?.data?['message'] ?? 'An error occurred');
     }
