@@ -3,6 +3,8 @@ package project.dto;
 import lombok.Getter;
 import lombok.Setter;
 import project.models.Event;
+import project.repository.EventRegistrationRepository;
+import project.repository.EventRepository; // Add this import
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
@@ -34,7 +36,8 @@ public class EventDTO {
     private Integer capacityLeft;
     private String status; // Event status
 
-    public static EventDTO fromEntity(Event event) {
+    // Update the method signature to include EventRepository
+    public static EventDTO fromEntity(Event event, EventRegistrationRepository eventRegistrationRepository, EventRepository eventRepository) {
         EventDTO dto = new EventDTO();
         dto.setId(event.getId());
         dto.setTitle(event.getTitle());
@@ -46,8 +49,10 @@ public class EventDTO {
         dto.setMeetingLink(event.getMeetingLink());
         dto.setImageUrl(event.getImageUrl());
         dto.setMaxParticipants(event.getMaxParticipants());
-        dto.setCurrentParticipants(event.getRegistrations().size());
-        dto.setCapacityLeft(event.getMaxParticipants() != null ? event.getMaxParticipants() - event.getRegistrations().size() : null);
+        // Use eventRepository to call countRegistrationsByEventId
+        int currentParticipants = eventRepository.countRegistrationsByEventId(event.getId());
+        dto.setCurrentParticipants(currentParticipants);
+        dto.setCapacityLeft(event.getMaxParticipants() != null ? event.getMaxParticipants() - currentParticipants : null);
         dto.setStatus(event.getStatus().name());
         return dto;
     }

@@ -19,4 +19,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     @Query("SELECT e FROM Event e WHERE e.startDateTime BETWEEN :start AND :end")
     List<Event> findByStartDateTimeBetween(LocalDateTime start, LocalDateTime end);
+
+    @Query("SELECT COUNT(r) FROM EventRegistration r WHERE r.event.id = :eventId")
+    int countRegistrationsByEventId(Long eventId);
 }

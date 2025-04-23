@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import project.dto.AttendanceDTO;
 import project.dto.EventDTO;
+import project.exception.EventServiceException;
 import project.exception.InvalidQRCodeException;
 import project.exception.ResourceNotFoundException;
 import project.models.*;
@@ -29,11 +30,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -65,14 +63,21 @@ public class EventService {
     @Value("${hms.management.token}")
     private String HMS_MANAGEMENT_TOKEN;
 
+    @Value("${event.reminder.hours-before}")
+    private String reminderHoursBefore;
+
     private final RestTemplate restTemplate = new RestTemplate();
+
+    // In-memory cache for recent check-ins (eventId:studentId -> timestamp)
+    private final Map<String, LocalDateTime> recentCheckIns = new ConcurrentHashMap<>();
+    private static final long CHECK_IN_COOLDOWN_SECONDS = 30; // Prevent duplicate check-ins within 30 seconds
 
     @Transactional
     public EventDTO createEvent(@Valid EventDTO eventDTO, Long adminId) {
         UserEntity admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("Admin not found with id: " + adminId));
         if (!admin.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN)) {
-            throw new IllegalStateException("Only admins can create events");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "Only admins can create events");
         }
 
         validateEventDates(eventDTO.getStartDateTime(), eventDTO.getEndDateTime());
@@ -101,7 +106,7 @@ public class EventService {
                 UserRoleName.USER
         );
 
-        return EventDTO.fromEntity(savedEvent);
+        return EventDTO.fromEntity(savedEvent, eventRegistrationRepository, eventRepository);
     }
 
     @Transactional
@@ -109,7 +114,7 @@ public class EventService {
         UserEntity admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("Admin not found with id: " + adminId));
         if (!admin.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN)) {
-            throw new IllegalStateException("Only admins can update events");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "Only admins can update events");
         }
 
         Event event = eventRepository.findById(eventId)
@@ -147,7 +152,7 @@ public class EventService {
             );
         }
 
-        return EventDTO.fromEntity(updatedEvent);
+        return EventDTO.fromEntity(updatedEvent, eventRegistrationRepository, eventRepository);
     }
 
     @Transactional
@@ -155,11 +160,16 @@ public class EventService {
         UserEntity admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("Admin not found with id: " + adminId));
         if (!admin.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN)) {
-            throw new IllegalStateException("Only admins can delete events");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "Only admins can delete events");
         }
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
+
+        // Prevent deletion of ongoing events
+        if (event.getStatus() == Event.EventStatus.ONGOING) {
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "Cannot delete an ongoing event");
+        }
 
         List<Long> registeredUserIds = eventRegistrationRepository.findAllByEvent(event)
                 .stream()
@@ -182,6 +192,7 @@ public class EventService {
         }
 
         eventRepository.delete(event);
+        logger.info("Event {} deleted by admin {}", eventId, adminId);
     }
 
     @Scheduled(cron = "0 0 * * * *") // Run every hour
@@ -189,45 +200,114 @@ public class EventService {
     public void sendEventReminders() {
         logger.info("Running sendEventReminders at {}", LocalDateTime.now());
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime startWindow = now.plusHours(24);
-        LocalDateTime endWindow = now.plusHours(25);
 
-        List<Event> upcomingEvents = eventRepository.findByStartDateTimeBetween(startWindow, endWindow);
-        logger.info("Found {} upcoming events between {} and {}", upcomingEvents.size(), startWindow, endWindow);
+        // Parse the reminder intervals (e.g., "24,1" for 24 hours and 1 hour before)
+        List<Integer> reminderIntervals = Arrays.stream(reminderHoursBefore.split(","))
+                .map(Integer::parseInt)
+                .collect(Collectors.toList());
 
-        for (Event event : upcomingEvents) {
-            if (eventReminderRepository.existsByEventId(event.getId())) {
-                logger.info("Reminder already sent for event ID: {}", event.getId());
-                continue;
+        for (Integer hoursBefore : reminderIntervals) {
+            LocalDateTime startWindow = now.plusHours(hoursBefore - 1); // Start 1 hour earlier
+            LocalDateTime endWindow = now.plusHours(hoursBefore + 1);
+
+            List<Event> upcomingEvents = eventRepository.findByStartDateTimeBetween(startWindow, endWindow);
+            logger.info("Found {} upcoming events between {} and {} for {} hours reminder",
+                    upcomingEvents.size(), startWindow, endWindow, hoursBefore);
+
+            for (Event event : upcomingEvents) {
+                String reminderKey = event.getId() + "-" + hoursBefore;
+                if (eventReminderRepository.existsByEventIdAndHoursBefore(event.getId(), hoursBefore)) {
+                    logger.info("Reminder for {} hours already sent for event ID: {}", hoursBefore, event.getId());
+                    continue;
+                }
+
+                List<Long> registeredUserIds = eventRegistrationRepository.findAllByEvent(event)
+                        .stream()
+                        .map(reg -> reg.getStudent().getId())
+                        .collect(Collectors.toList());
+
+                if (!registeredUserIds.isEmpty()) {
+                    String notificationTitle = "Reminder: " + event.getTitle() + " in " + hoursBefore + " Hours";
+                    String notificationMessage = "The event '" + event.getTitle() + "' is in " + hoursBefore + " hours at " +
+                            event.getStartDateTime() + ". " +
+                            (event.isOnline() ? "Join online: " + event.getMeetingLink() : "Location: " + event.getLocation()) +
+                            " [Event ID: " + event.getId() + "]";
+                    logger.info("Sending reminder for event ID: {} to {} users for {} hours", event.getId(), registeredUserIds.size(), hoursBefore);
+                    notificationService.createNotificationsWithPagination(
+                            registeredUserIds,
+                            notificationTitle,
+                            notificationMessage,
+                            Notification.NotificationType.EVENT,
+                            UserRoleName.USER
+                    );
+
+                    EventReminder reminder = new EventReminder();
+                    reminder.setEventId(event.getId());
+                    reminder.setHoursBefore(hoursBefore);
+                    reminder.setSentAt(now);
+                    eventReminderRepository.save(reminder);
+                    logger.info("Saved reminder for event ID: {} for {} hours", event.getId(), hoursBefore);
+                } else {
+                    logger.info("No registered users for event ID: {}", event.getId());
+                }
             }
+        }
+    }
 
-            List<Long> registeredUserIds = eventRegistrationRepository.findAllByEvent(event)
-                    .stream()
-                    .map(reg -> reg.getStudent().getId())
-                    .collect(Collectors.toList());
+    // New scheduled task to update event statuses
+    @Scheduled(cron = "0 * * * * *") // Run every minute
+    @Transactional
+    public void updateEventStatuses() {
+        logger.info("Running updateEventStatuses at {}", LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
 
-            if (!registeredUserIds.isEmpty()) {
-                String notificationTitle = "Reminder: " + event.getTitle() + " Tomorrow";
-                String notificationMessage = "The event '" + event.getTitle() + "' is tomorrow at " +
-                        event.getStartDateTime() + ". " +
-                        (event.isOnline() ? "Join online: " + event.getMeetingLink() : "Location: " + event.getLocation()) +
-                        " [Event ID: " + event.getId() + "]";
-                logger.info("Sending reminder for event ID: {} to {} users", event.getId(), registeredUserIds.size());
-                notificationService.createNotificationsWithPagination(
-                        registeredUserIds,
-                        notificationTitle,
-                        notificationMessage,
-                        Notification.NotificationType.EVENT,
-                        UserRoleName.USER
-                );
+        // Fetch all events that are not ENDED
+        List<Event> eventsToUpdate = eventRepository.findAll().stream()
+                .filter(event -> event.getStatus() != Event.EventStatus.ENDED)
+                .collect(Collectors.toList());
 
-                EventReminder reminder = new EventReminder();
-                reminder.setEventId(event.getId());
-                reminder.setSentAt(now);
-                eventReminderRepository.save(reminder);
-                logger.info("Saved reminder for event ID: {}", event.getId());
+        logger.info("Found {} events to update (excluding ENDED events)", eventsToUpdate.size());
+        for (Event event : eventsToUpdate) {
+            // Refresh the entity to ensure we have the latest data from the database
+            event = eventRepository.findById(event.getId()).orElse(event);
+
+            logger.info("Processing event ID {}: title={}, startDateTime={}, endDateTime={}, currentStatus={}",
+                    event.getId(), event.getTitle(), event.getStartDateTime(), event.getEndDateTime(), event.getStatus());
+
+            Event.EventStatus oldStatus = event.getStatus();
+            event.updateStatus(); // Explicitly call updateStatus
+            Event savedEvent = eventRepository.save(event);
+            Event.EventStatus newStatus = savedEvent.getStatus();
+
+            // Verify the status in the database
+            Event refreshedEvent = eventRepository.findById(event.getId()).orElse(event);
+            logger.info("Database status for event ID {} after save: {}", event.getId(), refreshedEvent.getStatus());
+
+            if (oldStatus != newStatus) {
+                logger.info("Event ID {} status changed from {} to {}", event.getId(), oldStatus, newStatus);
+
+                if (newStatus == Event.EventStatus.ONGOING || newStatus == Event.EventStatus.ENDED) {
+                    List<Long> registeredUserIds = eventRegistrationRepository.findAllByEvent(event)
+                            .stream()
+                            .map(reg -> reg.getStudent().getId())
+                            .collect(Collectors.toList());
+
+                    if (!registeredUserIds.isEmpty()) {
+                        String notificationTitle = "Event Status Update: " + event.getTitle();
+                        String notificationMessage = "The event '" + event.getTitle() + "' is now " + newStatus + ". " +
+                                (event.isOnline() ? "Join online: " + event.getMeetingLink() : "Location: " + event.getLocation()) +
+                                " [Event ID: " + event.getId() + "]";
+                        notificationService.createNotificationsWithPagination(
+                                registeredUserIds,
+                                notificationTitle,
+                                notificationMessage,
+                                Notification.NotificationType.EVENT,
+                                UserRoleName.USER
+                        );
+                    }
+                }
             } else {
-                logger.info("No registered users for event ID: {}", event.getId());
+                logger.info("Event ID {} status unchanged: {}", event.getId(), newStatus);
             }
         }
     }
@@ -246,10 +326,15 @@ public class EventService {
         ResponseEntity<Map> response = restTemplate.postForEntity(HMS_ROOM_ENDPOINT, entity, Map.class);
 
         if (response.getStatusCode() != HttpStatus.OK) {
-            throw new RuntimeException("Failed to create 100ms room: " + response.getBody());
+            throw new EventServiceException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create 100ms room: " + response.getBody());
         }
 
-        return (String) response.getBody().get("id");
+        Map responseBody = response.getBody();
+        if (responseBody == null || !responseBody.containsKey("id") || responseBody.get("id") == null) {
+            throw new EventServiceException(HttpStatus.INTERNAL_SERVER_ERROR, "HMS room creation response missing 'id' field");
+        }
+
+        return (String) responseBody.get("id");
     }
 
     public Page<EventDTO> getAllEvents(Pageable pageable, String statusFilter) {
@@ -257,7 +342,7 @@ public class EventService {
                 ? Event.EventStatus.valueOf(statusFilter.toUpperCase())
                 : null;
         return eventRepository.findByStatus(status, pageable)
-                .map(EventDTO::fromEntity);
+                .map(event -> EventDTO.fromEntity(event, eventRegistrationRepository, eventRepository));
     }
 
     @Transactional
@@ -267,12 +352,17 @@ public class EventService {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
+        // Prevent registration for non-upcoming events
+        if (event.getStatus() != Event.EventStatus.UPCOMING) {
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "Cannot register for an event that is not upcoming");
+        }
+
         if (eventRegistrationRepository.existsByEventAndStudent(event, user)) {
-            throw new IllegalStateException("You are already registered for this event");
+            throw new EventServiceException(HttpStatus.CONFLICT, "You are already registered for this event");
         }
 
         if (event.getMaxParticipants() != null && event.getRegistrations().size() >= event.getMaxParticipants()) {
-            throw new IllegalStateException("Event has reached maximum participants");
+            throw new EventServiceException(HttpStatus.CONFLICT, "Event has reached maximum participants");
         }
 
         EventRegistration registration = new EventRegistration();
@@ -280,12 +370,15 @@ public class EventService {
         registration.setStudent(user);
         registration.setCheckedIn(false);
         eventRegistrationRepository.save(registration);
+        logger.info("User {} registered for event {}", userId, eventId);
 
         if (!event.isOnline()) {
             try {
-                return QRCodeUtil.generateQRCodeBase64(eventId, userId);
+                String qrCode = QRCodeUtil.generateQRCodeBase64(eventId, userId);
+                logger.info("Generated QR code for user {} at event {}", userId, eventId);
+                return qrCode;
             } catch (Exception e) {
-                throw new RuntimeException("Failed to generate QR code: " + e.getMessage());
+                throw new EventServiceException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate QR code: " + e.getMessage());
             }
         }
         return null;
@@ -298,56 +391,96 @@ public class EventService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         if (!event.isOnline()) {
-            throw new IllegalStateException("This is not an online event");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "This is not an online event");
         }
 
         if (!eventRegistrationRepository.existsByEventAndStudent(event, user)) {
-            throw new IllegalStateException("You are not registered for this event");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "You are not registered for this event");
         }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime windowStart = event.getStartDateTime().minusMinutes(10);
         if (now.isBefore(windowStart) || now.isAfter(event.getEndDateTime())) {
-            throw new IllegalStateException("You can only join the event from 10 minutes before start until the end");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "You can only join the event from 10 minutes before start until the end");
         }
 
+        logger.info("User {} joined online event {}", userId, eventId);
         return event.getMeetingLink();
     }
 
     @Transactional
-    public boolean validateQRCode(String qrData) {
+    public boolean validateQRCode(Long eventId, String qrData) {
         try {
             Map<String, Long> qrInfo = QRCodeUtil.parseQRCodeData(qrData);
-            Long eventId = qrInfo.get("eventId");
+            Long qrEventId = qrInfo.get("eventId");
             Long userId = qrInfo.get("studentId");
+
+            // Check for recent check-in attempts
+            String checkInKey = eventId + ":" + userId;
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime lastCheckIn = recentCheckIns.get(checkInKey);
+            if (lastCheckIn != null && now.isBefore(lastCheckIn.plusSeconds(CHECK_IN_COOLDOWN_SECONDS))) {
+                logger.warn("Duplicate check-in attempt for user {} at event {} within cooldown period", userId, eventId);
+                return false;
+            }
+
+            // Validate that the eventId from the QR code matches the endpoint eventId
+            if (!qrEventId.equals(eventId)) {
+                logger.warn("QR code eventId {} does not match endpoint eventId {}", qrEventId, eventId);
+                return false;
+            }
 
             Event event = eventRepository.findById(eventId)
                     .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
             UserEntity user = userRepository.findById(userId)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
-            EventRegistration registration = eventRegistrationRepository.findByEventAndStudent(event, user)
-                    .orElseThrow(() -> new IllegalStateException("User is not registered for this event"));
-
-            if (registration.isCheckedIn()) {
-                throw new IllegalStateException("User has already checked in");
+            // Check if the event is within the check-in window
+            LocalDateTime windowStart = event.getStartDateTime().minusMinutes(10);
+            if (now.isBefore(windowStart) || now.isAfter(event.getEndDateTime())) {
+                logger.warn("Check-in attempted outside allowed window for eventId {} at {}", eventId, now);
+                return false;
             }
 
+            // Check if the user is registered for the event
+            EventRegistration registration = eventRegistrationRepository.findByEventAndStudent(event, user)
+                    .orElse(null);
+            if (registration == null) {
+                logger.warn("User {} is not registered for event {}", userId, eventId);
+                return false;
+            }
+
+            // Check if the user has already checked in
+            if (registration.isCheckedIn()) {
+                logger.warn("User {} has already checked in for event {}", userId, eventId);
+                return false;
+            }
+
+            // Perform the check-in
             registration.setCheckedIn(true);
+            registration.setCheckInTime(now);
             eventRegistrationRepository.save(registration);
+            recentCheckIns.put(checkInKey, now);
+            logger.info("Successful check-in for user {} at event {}", userId, eventId);
             return true;
-        } catch (InvalidQRCodeException e) {
-            throw new IllegalStateException("Invalid QR code: " + e.getMessage());
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to parse QR code: " + e.getMessage());
+        } catch (InvalidQRCodeException | IOException e) {
+            logger.error("Failed to validate QR code: {}", e.getMessage());
+            return false;
         }
+    }
+
+    @Scheduled(fixedRate = 60000) // Run every minute
+    public void cleanUpRecentCheckIns() {
+        LocalDateTime now = LocalDateTime.now();
+        recentCheckIns.entrySet().removeIf(entry ->
+                now.isAfter(entry.getValue().plusSeconds(CHECK_IN_COOLDOWN_SECONDS)));
     }
 
     public List<EventDTO> getMyRegisteredEvents(Long userId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
         return eventRegistrationRepository.findByStudent(user).stream()
-                .map(reg -> EventDTO.fromEntity(reg.getEvent()))
+                .map(reg -> EventDTO.fromEntity(reg.getEvent(), eventRegistrationRepository, eventRepository))
                 .collect(Collectors.toList());
     }
 
@@ -355,20 +488,21 @@ public class EventService {
         UserEntity admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("Admin not found with id: " + adminId));
         if (!admin.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN)) {
-            throw new IllegalStateException("Only admins can export attendance");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "Only admins can export attendance");
         }
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
         if (event.isOnline()) {
-            throw new IllegalStateException("Attendance export is only available for in-person events");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "Attendance export is only available for in-person events");
         }
 
         return eventRegistrationRepository.findAllByEvent(event).stream()
                 .map(reg -> new AttendanceDTO(
                         reg.getStudent().getId(),
                         reg.getStudent().getUsername(),
-                        reg.isCheckedIn()))
+                        reg.isCheckedIn(),
+                        reg.getCheckInTime()))
                 .collect(Collectors.toList());
     }
 
@@ -376,32 +510,38 @@ public class EventService {
         UserEntity admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new ResourceNotFoundException("Admin not found with id: " + adminId));
         if (!admin.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN)) {
-            throw new IllegalStateException("Only admins can export attendance");
+            throw new EventServiceException(HttpStatus.FORBIDDEN, "Only admins can export attendance");
         }
 
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
         if (event.isOnline()) {
-            throw new IllegalStateException("Attendance export is only available for in-person events");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "Attendance export is only available for in-person events");
         }
 
         List<AttendanceDTO> attendance = eventRegistrationRepository.findAllByEvent(event).stream()
                 .map(reg -> new AttendanceDTO(
                         reg.getStudent().getId(),
                         reg.getStudent().getUsername(),
-                        reg.isCheckedIn()))
+                        reg.isCheckedIn(),
+                        reg.getCheckInTime()))
                 .collect(Collectors.toList());
 
         try (ByteArrayOutputStream out = new ByteArrayOutputStream();
              CSVPrinter csvPrinter = new CSVPrinter(new PrintWriter(out), CSVFormat.DEFAULT
-                     .withHeader("Student ID", "Username", "Checked In"))) {
+                     .withHeader("Student ID", "Username", "Checked In", "Check-In Time"))) {
             for (AttendanceDTO record : attendance) {
-                csvPrinter.printRecord(record.getStudentId(), record.getUsername(), record.isCheckedIn());
+                csvPrinter.printRecord(
+                        record.getStudentId(),
+                        record.getUsername(),
+                        record.isCheckedIn(),
+                        record.getCheckInTime() != null ? record.getCheckInTime().toString() : null
+                );
             }
             csvPrinter.flush();
             return Base64.getEncoder().encodeToString(out.toByteArray());
         } catch (IOException e) {
-            throw new RuntimeException("Failed to export CSV: " + e.getMessage());
+            throw new EventServiceException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to export CSV: " + e.getMessage());
         }
     }
 
@@ -413,15 +553,16 @@ public class EventService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         if (!eventRegistrationRepository.existsByEventAndStudent(event, user)) {
-            throw new IllegalStateException("You are not registered for this event");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "You are not registered for this event");
         }
 
         eventRegistrationRepository.deleteByEventAndStudent(event, user);
+        logger.info("User {} cancelled registration for event {}", userId, eventId);
     }
 
     private void validateEventDates(LocalDateTime start, LocalDateTime end) {
         if (start == null || end == null || !end.isAfter(start)) {
-            throw new IllegalStateException("End time must be after start time");
+            throw new EventServiceException(HttpStatus.BAD_REQUEST, "End time must be after start time");
         }
     }
 

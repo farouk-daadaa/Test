@@ -17,6 +17,7 @@ import project.repository.EventRepository;
 import project.repository.UserRepository;
 import project.security.HmsTokenService;
 import project.service.EventService;
+import project.exception.EventServiceException;
 
 import javax.validation.Valid;
 import java.util.HashMap;
@@ -41,26 +42,38 @@ public class EventController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<EventDTO> createEvent(@Valid @RequestBody EventDTO eventDTO, Authentication authentication) {
-        Long adminId = getUserIdFromAuthentication(authentication);
-        EventDTO createdEvent = eventService.createEvent(eventDTO, adminId);
-        return new ResponseEntity<>(createdEvent, HttpStatus.CREATED);
+    public ResponseEntity<?> createEvent(@Valid @RequestBody EventDTO eventDTO, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            EventDTO createdEvent = eventService.createEvent(eventDTO, adminId);
+            return new ResponseEntity<>(createdEvent, HttpStatus.CREATED);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @PutMapping("/{eventId}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<EventDTO> updateEvent(@PathVariable Long eventId, @Valid @RequestBody EventDTO eventDTO, Authentication authentication) {
-        Long adminId = getUserIdFromAuthentication(authentication);
-        EventDTO updatedEvent = eventService.updateEvent(eventDTO, eventId, adminId);
-        return ResponseEntity.ok(updatedEvent);
+    public ResponseEntity<?> updateEvent(@PathVariable Long eventId, @Valid @RequestBody EventDTO eventDTO, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            EventDTO updatedEvent = eventService.updateEvent(eventDTO, eventId, adminId);
+            return ResponseEntity.ok(updatedEvent);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @DeleteMapping("/{eventId}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> deleteEvent(@PathVariable Long eventId, Authentication authentication) {
-        Long adminId = getUserIdFromAuthentication(authentication);
-        eventService.deleteEvent(eventId, adminId);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> deleteEvent(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            eventService.deleteEvent(eventId, adminId);
+            return ResponseEntity.noContent().build();
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @GetMapping
@@ -74,45 +87,68 @@ public class EventController {
     }
 
     @PostMapping("/{eventId}/register")
-    public ResponseEntity<String> registerForEvent(@PathVariable Long eventId, Authentication authentication) {
-        Long studentId = getUserIdFromAuthentication(authentication);
-        String qrCodeBase64 = eventService.registerForEvent(eventId, studentId);
-        return ResponseEntity.ok(qrCodeBase64);
+    public ResponseEntity<?> registerForEvent(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long studentId = getUserIdFromAuthentication(authentication);
+            String qrCodeBase64 = eventService.registerForEvent(eventId, studentId);
+            return ResponseEntity.ok(qrCodeBase64);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @DeleteMapping("/{eventId}/register")
-    public ResponseEntity<Void> cancelRegistration(@PathVariable Long eventId, Authentication authentication) {
-        Long studentId = getUserIdFromAuthentication(authentication);
-        eventService.cancelRegistration(eventId, studentId);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> cancelRegistration(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long studentId = getUserIdFromAuthentication(authentication);
+            eventService.cancelRegistration(eventId, studentId);
+            return ResponseEntity.noContent().build();
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @GetMapping("/{eventId}/join")
-    public ResponseEntity<Map<String, String>> joinOnlineEvent(@PathVariable Long eventId, Authentication authentication) {
-        Long studentId = getUserIdFromAuthentication(authentication);
-        String meetingLink = eventService.joinOnlineEvent(eventId, studentId);
+    public ResponseEntity<?> joinOnlineEvent(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long studentId = getUserIdFromAuthentication(authentication);
+            String meetingLink = eventService.joinOnlineEvent(eventId, studentId);
 
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalStateException("Event not found with id: " + eventId));
+            Event event = eventRepository.findById(eventId)
+                    .orElseThrow(() -> new IllegalStateException("Event not found with id: " + eventId));
 
-        String username = authentication.getName();
-        String roomId = meetingLink.replace("room://", "");
-        String meetingToken = hmsTokenService.generateHmsToken(roomId, username, "student");
+            String username = authentication.getName();
+            String roomId = meetingLink.replace("room://", "");
+            String meetingToken = hmsTokenService.generateHmsToken(roomId, username, "student");
 
-        Map<String, String> response = new HashMap<>();
-        response.put("meetingLink", meetingLink);
-        response.put("meetingToken", meetingToken);
-        response.put("roomId", roomId);
-        response.put("title", event.getTitle());
+            Map<String, String> response = new HashMap<>();
+            response.put("meetingLink", meetingLink);
+            response.put("meetingToken", meetingToken);
+            response.put("roomId", roomId);
+            response.put("title", event.getTitle());
 
-        return ResponseEntity.ok(response);
+            return ResponseEntity.ok(response);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @PostMapping("/{eventId}/check-in")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Boolean> validateQRCode(@PathVariable Long eventId, @RequestBody String qrData) {
-        boolean checkedIn = eventService.validateQRCode(qrData);
-        return ResponseEntity.ok(checkedIn);
+    public ResponseEntity<?> validateQRCode(@PathVariable Long eventId, @RequestBody Map<String, Long> qrData) {
+        try {
+            // Validate that the QR data contains the required fields
+            if (!qrData.containsKey("eventId") || !qrData.containsKey("studentId")) {
+                return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid QR code data: eventId and studentId are required");
+            }
+
+            // Convert the QR data to a JSON string for parsing in the service
+            String qrDataJson = "{\"eventId\":" + qrData.get("eventId") + ",\"studentId\":" + qrData.get("studentId") + "}";
+            boolean checkedIn = eventService.validateQRCode(eventId, qrDataJson);
+            return ResponseEntity.ok(checkedIn);
+        } catch (Exception e) {
+            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred: " + e.getMessage());
+        }
     }
 
     @GetMapping("/my-events")
@@ -124,18 +160,26 @@ public class EventController {
 
     @GetMapping("/{eventId}/attendance")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<List<AttendanceDTO>> exportAttendance(@PathVariable Long eventId, Authentication authentication) {
-        Long adminId = getUserIdFromAuthentication(authentication);
-        List<AttendanceDTO> attendance = eventService.exportAttendance(eventId, adminId);
-        return ResponseEntity.ok(attendance);
+    public ResponseEntity<?> exportAttendance(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            List<AttendanceDTO> attendance = eventService.exportAttendance(eventId, adminId);
+            return ResponseEntity.ok(attendance);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     @GetMapping("/{eventId}/attendance/csv")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<String> exportAttendanceCSV(@PathVariable Long eventId, Authentication authentication) {
-        Long adminId = getUserIdFromAuthentication(authentication);
-        String csvBase64 = eventService.exportAttendanceCSV(eventId, adminId);
-        return ResponseEntity.ok(csvBase64);
+    public ResponseEntity<?> exportAttendanceCSV(@PathVariable Long eventId, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            String csvBase64 = eventService.exportAttendanceCSV(eventId, adminId);
+            return ResponseEntity.ok(csvBase64);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
     }
 
     private Long getUserIdFromAuthentication(Authentication authentication) {
@@ -146,5 +190,11 @@ public class EventController {
         UserEntity user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new IllegalStateException("User not found: " + username));
         return user.getId();
+    }
+
+    private ResponseEntity<Map<String, String>> buildErrorResponse(HttpStatus status, String message) {
+        Map<String, String> errorResponse = new HashMap<>();
+        errorResponse.put("message", message);
+        return new ResponseEntity<>(errorResponse, status);
     }
 }

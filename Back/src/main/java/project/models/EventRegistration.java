@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import javax.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Getter
@@ -21,6 +22,9 @@ public class EventRegistration {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "student_id", nullable = false)
     private UserEntity student;
+
+    @Column
+    private LocalDateTime checkInTime;
 
     @Column(nullable = false)
     private boolean checkedIn; // For in-person QR code check-in

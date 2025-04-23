@@ -44,7 +44,7 @@ public class Event {
     @Column(nullable = false)
     private EventStatus status = EventStatus.UPCOMING; // Event status
 
-    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<EventRegistration> registrations = new ArrayList<>();
 
     public void setIsOnline(boolean isOnline) {

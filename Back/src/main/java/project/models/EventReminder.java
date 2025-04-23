@@ -1,8 +1,14 @@
 package project.models;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import javax.persistence.*;
 import java.time.LocalDateTime;
 
+
+@Getter
+@Setter
 @Entity
 @Table(name = "event_reminders")
 public class EventReminder {
@@ -17,27 +23,8 @@ public class EventReminder {
     @Column(name = "sent_at", nullable = false)
     private LocalDateTime sentAt;
 
-    public Long getId() {
-        return id;
-    }
+    @Column(nullable = false)
+    private Integer hoursBefore;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
 
-    public Long getEventId() {
-        return eventId;
-    }
-
-    public void setEventId(Long eventId) {
-        this.eventId = eventId;
-    }
-
-    public LocalDateTime getSentAt() {
-        return sentAt;
-    }
-
-    public void setSentAt(LocalDateTime sentAt) {
-        this.sentAt = sentAt;
-    }
 }

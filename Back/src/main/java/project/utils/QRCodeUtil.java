@@ -41,8 +41,13 @@ public class QRCodeUtil {
                 throw new InvalidQRCodeException("QR code missing or invalid studentId");
             }
             Map<String, Long> result = new HashMap<>();
-            result.put("eventId", ((Number) map.get("eventId")).longValue());
-            result.put("studentId", ((Number) map.get("studentId")).longValue());
+            Long eventId = ((Number) map.get("eventId")).longValue();
+            Long studentId = ((Number) map.get("studentId")).longValue();
+            if (eventId <= 0 || studentId <= 0) {
+                throw new InvalidQRCodeException("eventId and studentId must be positive integers");
+            }
+            result.put("eventId", eventId);
+            result.put("studentId", studentId);
             return result;
         } catch (IOException e) {
             throw new InvalidQRCodeException("Invalid QR code data format: " + e.getMessage());
