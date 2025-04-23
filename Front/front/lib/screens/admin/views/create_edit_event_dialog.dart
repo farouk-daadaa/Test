@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:front/constants/colors.dart';
 import 'package:front/services/event_service.dart';
 
-
 class CreateEditEventDialog extends StatefulWidget {
   final EventDTO? event;
   final Function(EventDTO) onSave;
@@ -20,6 +19,7 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
   late TextEditingController _descriptionController;
   late TextEditingController _locationController;
   late TextEditingController _maxParticipantsController;
+  late TextEditingController _imageUrlController;
   late DateTime _startDateTime;
   late DateTime _endDateTime;
   late bool _isOnline;
@@ -32,6 +32,7 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     _locationController = TextEditingController(text: widget.event?.location ?? '');
     _maxParticipantsController =
         TextEditingController(text: widget.event?.maxParticipants?.toString() ?? '');
+    _imageUrlController = TextEditingController(text: widget.event?.imageUrl ?? '');
     _startDateTime = widget.event?.startDateTime ?? DateTime.now().add(Duration(hours: 1));
     _endDateTime = widget.event?.endDateTime ?? _startDateTime.add(Duration(hours: 1));
     _isOnline = widget.event?.isOnline ?? false;
@@ -43,6 +44,7 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     _descriptionController.dispose();
     _locationController.dispose();
     _maxParticipantsController.dispose();
+    _imageUrlController.dispose();
     super.dispose();
   }
 
@@ -103,6 +105,10 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 validator: (value) =>
                 value!.isEmpty ? 'Description is required' : null,
               ),
+              TextFormField(
+                controller: _imageUrlController,
+                decoration: InputDecoration(labelText: 'Image URL (optional)'),
+              ),
               SwitchListTile(
                 title: Text('Online Event'),
                 value: _isOnline,
@@ -147,6 +153,15 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
         TextButton(
           onPressed: () {
             if (_formKey.currentState!.validate()) {
+              final maxParticipants = _maxParticipantsController.text.isEmpty
+                  ? null
+                  : int.tryParse(_maxParticipantsController.text); // Changed to tryParse
+              if (maxParticipants == null && _maxParticipantsController.text.isNotEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Max Participants must be a valid number')),
+                );
+                return;
+              }
               final event = EventDTO(
                 id: widget.event?.id ?? 0,
                 title: _titleController.text,
@@ -155,9 +170,8 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 endDateTime: _endDateTime,
                 isOnline: _isOnline,
                 location: _isOnline ? null : _locationController.text,
-                maxParticipants: _maxParticipantsController.text.isEmpty
-                    ? null
-                    : int.parse(_maxParticipantsController.text),
+                imageUrl: _imageUrlController.text.isNotEmpty ? _imageUrlController.text : null,
+                maxParticipants: maxParticipants,
                 currentParticipants: widget.event?.currentParticipants ?? 0,
                 capacityLeft: widget.event?.capacityLeft ?? 0,
                 status: widget.event?.status ?? 'UPCOMING',

@@ -3,9 +3,10 @@ import 'package:front/services/event_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:front/constants/colors.dart';
-import 'package:provider/provider.dart';
 import 'package:front/services/auth_service.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:intl/intl.dart'; // Added import for DateFormat
 
 class AttendanceView extends StatefulWidget {
   final int eventId;
@@ -58,12 +59,11 @@ class _AttendanceViewState extends State<AttendanceView> {
     try {
       final csvData = await _eventService.exportAttendance(widget.eventId);
       final directory = await getTemporaryDirectory();
-      final safeEventTitle = widget.eventTitle.replaceAll(RegExp(r'[^\w\s-]'), '_'); // Sanitize filename
+      final safeEventTitle = widget.eventTitle.replaceAll(RegExp(r'[^\w\s-]'), '_');
       final path = '${directory.path}/${safeEventTitle}_attendance.csv';
       final file = File(path);
       await file.writeAsString(csvData);
 
-      // Share the file using share_plus
       await Share.shareXFiles(
         [XFile(path, mimeType: 'text/csv')],
         text: 'Attendance for ${widget.eventTitle}',
@@ -121,8 +121,18 @@ class _AttendanceViewState extends State<AttendanceView> {
               final record = attendance[index];
               return ListTile(
                 title: Text(record.username.isEmpty ? 'Unknown' : record.username),
-                subtitle: Text(
-                  record.checkedIn ? 'Checked in' : 'Not checked in',
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      record.checkedIn ? 'Checked in' : 'Not checked in',
+                    ),
+                    if (record.checkedIn && record.checkInTime != null)
+                      Text(
+                        'Check-in time: ${DateFormat('MMM dd, yyyy HH:mm').format(record.checkInTime!)}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                  ],
                 ),
               );
             },

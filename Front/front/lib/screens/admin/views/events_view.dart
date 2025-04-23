@@ -6,6 +6,7 @@ import 'package:front/screens/admin/views/create_edit_event_dialog.dart';
 import 'package:front/screens/admin/views/attendance_view.dart';
 import 'package:front/screens/admin/views/qr_scanner_view.dart';
 import 'package:front/constants/colors.dart';
+import 'package:front/main.dart'; // Import main.dart to access scaffoldMessengerKey
 
 class EventsView extends StatefulWidget {
   const EventsView({Key? key}) : super(key: key);
@@ -81,8 +82,18 @@ class _EventsViewState extends State<EventsView> {
                     event.title,
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  subtitle: Text(
-                    '${event.getFormattedDate()} • ${event.isOnline ? 'Online' : 'In-Person'} • ${event.status}',
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${event.getFormattedDate()} • ${event.isOnline ? 'Online' : 'In-Person'} • ${event.status ?? 'Unknown'}',
+                      ),
+                      if (event.maxParticipants != null)
+                        Text(
+                          'Participants: ${event.currentParticipants}/${event.maxParticipants} (${event.capacityLeft ?? 0} left)',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                    ],
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (value) => _handleMenuAction(context, value, event),
@@ -146,27 +157,27 @@ class _EventsViewState extends State<EventsView> {
         onSave: (updatedEvent) {
           if (event == null) {
             _eventService.createEvent(updatedEvent).then((_) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              scaffoldMessengerKey.currentState?.showSnackBar(
                 SnackBar(content: Text('Event created successfully')),
               );
               setState(() {
                 _eventsFuture = _eventService.getEvents();
               });
             }).catchError((e) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              scaffoldMessengerKey.currentState?.showSnackBar(
                 SnackBar(content: Text('Error: $e')),
               );
             });
           } else {
             _eventService.updateEvent(event.id, updatedEvent).then((_) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              scaffoldMessengerKey.currentState?.showSnackBar(
                 SnackBar(content: Text('Event updated successfully')),
               );
               setState(() {
                 _eventsFuture = _eventService.getEvents();
               });
             }).catchError((e) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              scaffoldMessengerKey.currentState?.showSnackBar(
                 SnackBar(content: Text('Error: $e')),
               );
             });
@@ -190,7 +201,7 @@ class _EventsViewState extends State<EventsView> {
           TextButton(
             onPressed: () {
               _eventService.deleteEvent(event.id).then((_) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                scaffoldMessengerKey.currentState?.showSnackBar(
                   SnackBar(content: Text('Event deleted successfully')),
                 );
                 setState(() {
@@ -198,7 +209,7 @@ class _EventsViewState extends State<EventsView> {
                 });
                 Navigator.pop(context);
               }).catchError((e) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                scaffoldMessengerKey.currentState?.showSnackBar(
                   SnackBar(content: Text('Error: $e')),
                 );
               });

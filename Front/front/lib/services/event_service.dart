@@ -6,7 +6,7 @@ import 'dart:convert';
 class EventDTO {
   final int id;
   final String title;
-  final String description;
+  final String? description;
   final DateTime startDateTime;
   final DateTime endDateTime;
   final bool isOnline;
@@ -15,13 +15,13 @@ class EventDTO {
   final String? imageUrl;
   final int? maxParticipants;
   final int currentParticipants;
-  final int capacityLeft;
+  final int? capacityLeft;
   final String status;
 
   EventDTO({
     required this.id,
     required this.title,
-    required this.description,
+    this.description,
     required this.startDateTime,
     required this.endDateTime,
     required this.isOnline,
@@ -30,7 +30,7 @@ class EventDTO {
     this.imageUrl,
     this.maxParticipants,
     required this.currentParticipants,
-    required this.capacityLeft,
+    this.capacityLeft,
     required this.status,
   });
 
@@ -41,7 +41,7 @@ class EventDTO {
       description: json['description'],
       startDateTime: DateTime.parse(json['startDateTime']),
       endDateTime: DateTime.parse(json['endDateTime']),
-      isOnline: json['online'] ?? false,
+      isOnline: json['online'] ?? false, // Changed from 'isOnline' to 'online'
       location: json['location'],
       meetingLink: json['meetingLink'],
       imageUrl: json['imageUrl'],
@@ -58,8 +58,9 @@ class EventDTO {
       'description': description,
       'startDateTime': startDateTime.toIso8601String(),
       'endDateTime': endDateTime.toIso8601String(),
-      'online': isOnline,
+      'isOnline': isOnline,
       'location': location,
+      'imageUrl': imageUrl,
       'maxParticipants': maxParticipants,
     };
   }
@@ -69,40 +70,15 @@ class EventDTO {
   }
 }
 
-class JoinEventResponse {
-  final String meetingLink;
-  final String meetingToken;
-  final String roomId;
-  final String title;
-
-  JoinEventResponse({
-    required this.meetingLink,
-    required this.meetingToken,
-    required this.roomId,
-    required this.title,
-  });
-
-  factory JoinEventResponse.fromJson(Map<String, dynamic> json) {
-    return JoinEventResponse(
-      meetingLink: json['meetingLink'],
-      meetingToken: json['meetingToken'],
-      roomId: json['roomId'],
-      title: json['title'],
-    );
-  }
-}
-
 class AttendanceDTO {
   final int? studentId;
   final String username;
-  final String? email; // Nullable to handle missing email
-  final DateTime? checkInTime; // Nullable to handle no check-in
+  final DateTime? checkInTime;
   final bool checkedIn;
 
   AttendanceDTO({
     this.studentId,
     required this.username,
-    this.email,
     this.checkInTime,
     required this.checkedIn,
   });
@@ -111,7 +87,6 @@ class AttendanceDTO {
     return AttendanceDTO(
       studentId: json['studentId'],
       username: json['username'] ?? '',
-      email: json['email'],
       checkInTime: json['checkInTime'] != null ? DateTime.parse(json['checkInTime']) : null,
       checkedIn: json['checkedIn'] ?? false,
     );
@@ -228,14 +203,13 @@ class EventService {
     try {
       debugPrint('EventService: Exporting attendance for event $eventId');
       final response = await _dio.get(
-        '/api/events/$eventId/attendance/csv', // Updated endpoint
+        '/api/events/$eventId/attendance/csv',
         options: Options(
-          responseType: ResponseType.plain, // Expect plain text (Base64)
+          responseType: ResponseType.plain,
         ),
       );
       debugPrint('EventService: Export attendance response: ${response.statusCode}, data: ${response.data}');
       if (response.statusCode == 200) {
-        // Decode Base64 data
         final decodedData = utf8.decode(base64Decode(response.data));
         return decodedData;
       }
@@ -248,16 +222,22 @@ class EventService {
 
   Future<bool> checkIn(int eventId, String qrData) async {
     try {
-      debugPrint('EventService: Checking in for event $eventId with QR: $qrData');
+      final qrJson = jsonDecode(qrData) as Map<String, dynamic>;
+      debugPrint('EventService: Checking in for event $eventId with data: $qrJson');
+
       final response = await _dio.post(
         '/api/events/$eventId/check-in',
-        data: {'qrData': qrData},
+        data: qrJson,
       );
+
       debugPrint('EventService: Check-in response: ${response.statusCode}, data: ${response.data}');
       if (response.statusCode == 200) {
-        return response.data['success'] == true;
+        return response.data as bool;
       }
       throw Exception('Failed to check in: ${response.statusCode}');
+    } on FormatException catch (e) {
+      debugPrint('EventService: Invalid QR code format: $e');
+      throw Exception('Invalid QR code format');
     } catch (e) {
       debugPrint('EventService: Error checking in: $e');
       throw _handleError(e);
