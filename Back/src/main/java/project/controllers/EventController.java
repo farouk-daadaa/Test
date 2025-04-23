@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import project.dto.AttendanceDTO;
 import project.dto.EventDTO;
 import project.models.Event;
@@ -137,12 +138,10 @@ public class EventController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> validateQRCode(@PathVariable Long eventId, @RequestBody Map<String, Long> qrData) {
         try {
-            // Validate that the QR data contains the required fields
             if (!qrData.containsKey("eventId") || !qrData.containsKey("studentId")) {
                 return buildErrorResponse(HttpStatus.BAD_REQUEST, "Invalid QR code data: eventId and studentId are required");
             }
 
-            // Convert the QR data to a JSON string for parsing in the service
             String qrDataJson = "{\"eventId\":" + qrData.get("eventId") + ",\"studentId\":" + qrData.get("studentId") + "}";
             boolean checkedIn = eventService.validateQRCode(eventId, qrDataJson);
             return ResponseEntity.ok(checkedIn);
@@ -177,6 +176,18 @@ public class EventController {
             Long adminId = getUserIdFromAuthentication(authentication);
             String csvBase64 = eventService.exportAttendanceCSV(eventId, adminId);
             return ResponseEntity.ok(csvBase64);
+        } catch (EventServiceException e) {
+            return buildErrorResponse(e.getStatus(), e.getMessage());
+        }
+    }
+
+    @PostMapping("/upload-image")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> uploadEventImage(@RequestParam("file") MultipartFile file, Authentication authentication) {
+        try {
+            Long adminId = getUserIdFromAuthentication(authentication);
+            Map<String, String> response = eventService.uploadEventImage(file);
+            return ResponseEntity.ok(response);
         } catch (EventServiceException e) {
             return buildErrorResponse(e.getStatus(), e.getMessage());
         }

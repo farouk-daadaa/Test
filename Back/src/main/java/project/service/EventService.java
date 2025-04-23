@@ -12,6 +12,7 @@ import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.multipart.MultipartFile;
 import project.dto.AttendanceDTO;
 import project.dto.EventDTO;
 import project.exception.EventServiceException;
@@ -29,6 +30,9 @@ import javax.validation.Valid;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,9 +72,10 @@ public class EventService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    // In-memory cache for recent check-ins (eventId:studentId -> timestamp)
     private final Map<String, LocalDateTime> recentCheckIns = new ConcurrentHashMap<>();
-    private static final long CHECK_IN_COOLDOWN_SECONDS = 30; // Prevent duplicate check-ins within 30 seconds
+    private static final long CHECK_IN_COOLDOWN_SECONDS = 30;
+
+    private static final String UPLOAD_DIR = "uploads/event-images/";
 
     @Transactional
     public EventDTO createEvent(@Valid EventDTO eventDTO, Long adminId) {
@@ -166,7 +171,6 @@ public class EventService {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
 
-        // Prevent deletion of ongoing events
         if (event.getStatus() == Event.EventStatus.ONGOING) {
             throw new EventServiceException(HttpStatus.BAD_REQUEST, "Cannot delete an ongoing event");
         }
@@ -195,19 +199,18 @@ public class EventService {
         logger.info("Event {} deleted by admin {}", eventId, adminId);
     }
 
-    @Scheduled(cron = "0 0 * * * *") // Run every hour
+    @Scheduled(cron = "0 0 * * * *")
     @Transactional
     public void sendEventReminders() {
         logger.info("Running sendEventReminders at {}", LocalDateTime.now());
         LocalDateTime now = LocalDateTime.now();
 
-        // Parse the reminder intervals (e.g., "24,1" for 24 hours and 1 hour before)
         List<Integer> reminderIntervals = Arrays.stream(reminderHoursBefore.split(","))
                 .map(Integer::parseInt)
                 .collect(Collectors.toList());
 
         for (Integer hoursBefore : reminderIntervals) {
-            LocalDateTime startWindow = now.plusHours(hoursBefore - 1); // Start 1 hour earlier
+            LocalDateTime startWindow = now.plusHours(hoursBefore - 1);
             LocalDateTime endWindow = now.plusHours(hoursBefore + 1);
 
             List<Event> upcomingEvents = eventRepository.findByStartDateTimeBetween(startWindow, endWindow);
@@ -254,32 +257,28 @@ public class EventService {
         }
     }
 
-    // New scheduled task to update event statuses
-    @Scheduled(cron = "0 * * * * *") // Run every minute
+    @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void updateEventStatuses() {
         logger.info("Running updateEventStatuses at {}", LocalDateTime.now());
         LocalDateTime now = LocalDateTime.now();
 
-        // Fetch all events that are not ENDED
         List<Event> eventsToUpdate = eventRepository.findAll().stream()
                 .filter(event -> event.getStatus() != Event.EventStatus.ENDED)
                 .collect(Collectors.toList());
 
         logger.info("Found {} events to update (excluding ENDED events)", eventsToUpdate.size());
         for (Event event : eventsToUpdate) {
-            // Refresh the entity to ensure we have the latest data from the database
             event = eventRepository.findById(event.getId()).orElse(event);
 
             logger.info("Processing event ID {}: title={}, startDateTime={}, endDateTime={}, currentStatus={}",
                     event.getId(), event.getTitle(), event.getStartDateTime(), event.getEndDateTime(), event.getStatus());
 
             Event.EventStatus oldStatus = event.getStatus();
-            event.updateStatus(); // Explicitly call updateStatus
+            event.updateStatus();
             Event savedEvent = eventRepository.save(event);
             Event.EventStatus newStatus = savedEvent.getStatus();
 
-            // Verify the status in the database
             Event refreshedEvent = eventRepository.findById(event.getId()).orElse(event);
             logger.info("Database status for event ID {} after save: {}", event.getId(), refreshedEvent.getStatus());
 
@@ -352,7 +351,6 @@ public class EventService {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
-        // Prevent registration for non-upcoming events
         if (event.getStatus() != Event.EventStatus.UPCOMING) {
             throw new EventServiceException(HttpStatus.BAD_REQUEST, "Cannot register for an event that is not upcoming");
         }
@@ -415,7 +413,6 @@ public class EventService {
             Long qrEventId = qrInfo.get("eventId");
             Long userId = qrInfo.get("studentId");
 
-            // Check for recent check-in attempts
             String checkInKey = eventId + ":" + userId;
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime lastCheckIn = recentCheckIns.get(checkInKey);
@@ -424,7 +421,6 @@ public class EventService {
                 return false;
             }
 
-            // Validate that the eventId from the QR code matches the endpoint eventId
             if (!qrEventId.equals(eventId)) {
                 logger.warn("QR code eventId {} does not match endpoint eventId {}", qrEventId, eventId);
                 return false;
@@ -435,14 +431,12 @@ public class EventService {
             UserEntity user = userRepository.findById(userId)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
-            // Check if the event is within the check-in window
             LocalDateTime windowStart = event.getStartDateTime().minusMinutes(10);
             if (now.isBefore(windowStart) || now.isAfter(event.getEndDateTime())) {
                 logger.warn("Check-in attempted outside allowed window for eventId {} at {}", eventId, now);
                 return false;
             }
 
-            // Check if the user is registered for the event
             EventRegistration registration = eventRegistrationRepository.findByEventAndStudent(event, user)
                     .orElse(null);
             if (registration == null) {
@@ -450,13 +444,11 @@ public class EventService {
                 return false;
             }
 
-            // Check if the user has already checked in
             if (registration.isCheckedIn()) {
                 logger.warn("User {} has already checked in for event {}", userId, eventId);
                 return false;
             }
 
-            // Perform the check-in
             registration.setCheckedIn(true);
             registration.setCheckInTime(now);
             eventRegistrationRepository.save(registration);
@@ -469,7 +461,7 @@ public class EventService {
         }
     }
 
-    @Scheduled(fixedRate = 60000) // Run every minute
+    @Scheduled(fixedRate = 60000)
     public void cleanUpRecentCheckIns() {
         LocalDateTime now = LocalDateTime.now();
         recentCheckIns.entrySet().removeIf(entry ->
@@ -575,5 +567,35 @@ public class EventService {
         event.setLocation(dto.getLocation());
         event.setImageUrl(dto.getImageUrl());
         event.setMaxParticipants(dto.getMaxParticipants());
+    }
+
+    public Map<String, String> uploadEventImage(MultipartFile file) {
+        try {
+            Path uploadPath = Paths.get(UPLOAD_DIR);
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
+            }
+
+            String originalFilename = file.getOriginalFilename();
+            String fileExtension = originalFilename != null && originalFilename.contains(".")
+                    ? originalFilename.substring(originalFilename.lastIndexOf("."))
+                    : ".jpg";
+            String uniqueFilename = UUID.randomUUID().toString() + fileExtension;
+
+            Path filePath = uploadPath.resolve(uniqueFilename);
+            Files.write(filePath, file.getBytes());
+            logger.info("Event image uploaded successfully: {}", uniqueFilename);
+
+            // Store and return the relative path for both database and frontend
+            String relativePath = "/" + UPLOAD_DIR + uniqueFilename;
+
+            Map<String, String> response = new HashMap<>();
+            response.put("url", relativePath); // Relative path for frontend to construct full URL
+            response.put("relativePath", relativePath); // Relative path for database
+            return response;
+        } catch (IOException e) {
+            logger.error("Failed to upload event image: {}", e.getMessage());
+            throw new EventServiceException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload event image: " + e.getMessage());
+        }
     }
 }
