@@ -6,7 +6,7 @@ import 'package:front/screens/admin/views/create_edit_event_dialog.dart';
 import 'package:front/screens/admin/views/attendance_view.dart';
 import 'package:front/screens/admin/views/qr_scanner_view.dart';
 import 'package:front/constants/colors.dart';
-import 'package:front/main.dart'; // Import main.dart to access scaffoldMessengerKey
+import 'package:front/main.dart';
 
 class EventsView extends StatefulWidget {
   const EventsView({Key? key}) : super(key: key);
@@ -38,6 +38,13 @@ class _EventsViewState extends State<EventsView> {
         Navigator.of(context).pushReplacementNamed('/login');
       });
     }
+  }
+
+  // Helper method to construct the full image URL
+  String _getFullImageUrl(String? relativeUrl) {
+    if (relativeUrl == null || relativeUrl.isEmpty) return '';
+    // Prepend the baseUrl to the relative path
+    return '${_eventService.baseUrl}$relativeUrl';
   }
 
   @override
@@ -77,37 +84,76 @@ class _EventsViewState extends State<EventsView> {
               return Card(
                 elevation: 2,
                 margin: EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  title: Text(
-                    event.title,
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
                     children: [
-                      Text(
-                        '${event.getFormattedDate()} • ${event.isOnline ? 'Online' : 'In-Person'} • ${event.status ?? 'Unknown'}',
-                      ),
-                      if (event.maxParticipants != null)
-                        Text(
-                          'Participants: ${event.currentParticipants}/${event.maxParticipants} (${event.capacityLeft ?? 0} left)',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                      // Image Display
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey),
                         ),
+                        child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                            ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            _getFullImageUrl(event.imageUrl), // Construct the full URL
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Center(
+                              child: Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          ),
+                        )
+                            : Center(
+                          child: Icon(Icons.image, color: Colors.grey),
+                        ),
+                      ),
+                      SizedBox(width: 16),
+                      // Event Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event.title,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '${event.getFormattedDate()} • ${event.isOnline ? 'Online' : 'In-Person'} • ${event.status ?? 'Unknown'}',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            if (event.maxParticipants != null)
+                              Text(
+                                'Participants: ${event.currentParticipants}/${event.maxParticipants} (${event.capacityLeft ?? 0} left)',
+                                style: TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                          ],
+                        ),
+                      ),
+                      // Popup Menu
+                      PopupMenuButton<String>(
+                        onSelected: (value) => _handleMenuAction(context, value, event),
+                        itemBuilder: (context) {
+                          final items = [
+                            PopupMenuItem(value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(value: 'delete', child: Text('Delete')),
+                            PopupMenuItem(value: 'scan', child: Text('Scan QR Code')),
+                          ];
+                          if (!event.isOnline) {
+                            items.insert(
+                                2, PopupMenuItem(value: 'attendance', child: Text('View Attendance')));
+                          }
+                          return items;
+                        },
+                      ),
                     ],
-                  ),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) => _handleMenuAction(context, value, event),
-                    itemBuilder: (context) {
-                      final items = [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
-                        PopupMenuItem(value: 'scan', child: Text('Scan QR Code')),
-                      ];
-                      if (!event.isOnline) {
-                        items.insert(2, PopupMenuItem(value: 'attendance', child: Text('View Attendance')));
-                      }
-                      return items;
-                    },
                   ),
                 ),
               );
@@ -154,6 +200,7 @@ class _EventsViewState extends State<EventsView> {
       context: context,
       builder: (context) => CreateEditEventDialog(
         event: event,
+        eventService: _eventService,
         onSave: (updatedEvent) {
           if (event == null) {
             _eventService.createEvent(updatedEvent).then((_) {

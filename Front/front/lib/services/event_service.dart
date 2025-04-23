@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
+import 'dart:io';
 
 class EventDTO {
   final int id;
@@ -41,7 +42,7 @@ class EventDTO {
       description: json['description'],
       startDateTime: DateTime.parse(json['startDateTime']),
       endDateTime: DateTime.parse(json['endDateTime']),
-      isOnline: json['online'] ?? false, // Changed from 'isOnline' to 'online'
+      isOnline: json['online'] ?? false,
       location: json['location'],
       meetingLink: json['meetingLink'],
       imageUrl: json['imageUrl'],
@@ -240,6 +241,30 @@ class EventService {
       throw Exception('Invalid QR code format');
     } catch (e) {
       debugPrint('EventService: Error checking in: $e');
+      throw _handleError(e);
+    }
+  }
+
+  Future<String> uploadImage(File imageFile) async {
+    try {
+      debugPrint('EventService: Uploading image: ${imageFile.path}');
+      String fileName = imageFile.path.split('/').last;
+      FormData formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(imageFile.path, filename: fileName),
+      });
+
+      final response = await _dio.post(
+        '/api/events/upload-image', // Corrected the endpoint path
+        data: formData,
+      );
+
+      debugPrint('EventService: Image upload response: ${response.statusCode}, data: ${response.data}');
+      if (response.statusCode == 200) {
+        return response.data['url'] as String;
+      }
+      throw Exception('Failed to upload image: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('EventService: Error uploading image: $e');
       throw _handleError(e);
     }
   }

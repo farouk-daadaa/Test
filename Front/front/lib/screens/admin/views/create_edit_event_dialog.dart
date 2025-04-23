@@ -2,12 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:front/constants/colors.dart';
 import 'package:front/services/event_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 class CreateEditEventDialog extends StatefulWidget {
   final EventDTO? event;
   final Function(EventDTO) onSave;
+  final EventService eventService;
 
-  const CreateEditEventDialog({Key? key, this.event, required this.onSave}) : super(key: key);
+  const CreateEditEventDialog({
+    Key? key,
+    this.event,
+    required this.onSave,
+    required this.eventService,
+  }) : super(key: key);
 
   @override
   _CreateEditEventDialogState createState() => _CreateEditEventDialogState();
@@ -19,10 +27,12 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
   late TextEditingController _descriptionController;
   late TextEditingController _locationController;
   late TextEditingController _maxParticipantsController;
-  late TextEditingController _imageUrlController;
   late DateTime _startDateTime;
   late DateTime _endDateTime;
   late bool _isOnline;
+  File? _selectedImage;
+  String? _imageUrl;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -32,10 +42,10 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     _locationController = TextEditingController(text: widget.event?.location ?? '');
     _maxParticipantsController =
         TextEditingController(text: widget.event?.maxParticipants?.toString() ?? '');
-    _imageUrlController = TextEditingController(text: widget.event?.imageUrl ?? '');
     _startDateTime = widget.event?.startDateTime ?? DateTime.now().add(Duration(hours: 1));
     _endDateTime = widget.event?.endDateTime ?? _startDateTime.add(Duration(hours: 1));
     _isOnline = widget.event?.isOnline ?? false;
+    _imageUrl = widget.event?.imageUrl;
   }
 
   @override
@@ -44,8 +54,22 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     _descriptionController.dispose();
     _locationController.dispose();
     _maxParticipantsController.dispose();
-    _imageUrlController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+      if (pickedFile != null) {
+        setState(() {
+          _selectedImage = File(pickedFile.path);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error picking image: $e')),
+      );
+    }
   }
 
   Future<void> _selectDateTime(BuildContext context, bool isStart) async {
@@ -82,6 +106,28 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     }
   }
 
+  Future<String?> _uploadImageIfSelected() async {
+    if (_selectedImage != null) {
+      try {
+        String relativeUrl = await widget.eventService.uploadImage(_selectedImage!);
+        // The backend returns a relative path, so we don't need to fix it
+        return relativeUrl;
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading image: $e')),
+        );
+        return null;
+      }
+    }
+    return _imageUrl;
+  }
+
+  // Helper method to construct the full image URL
+  String _getFullImageUrl(String? relativeUrl) {
+    if (relativeUrl == null || relativeUrl.isEmpty) return '';
+    return '${widget.eventService.baseUrl}$relativeUrl';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -92,6 +138,55 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Image Display and Selection
+              Container(
+                height: 150,
+                width: double.infinity,
+                margin: EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _selectedImage != null
+                    ? Image.file(
+                  _selectedImage!,
+                  fit: BoxFit.cover,
+                )
+                    : _imageUrl != null && _imageUrl!.isNotEmpty
+                    ? Image.network(
+                  _getFullImageUrl(_imageUrl), // Construct the full URL
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Center(
+                    child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                  ),
+                )
+                    : Center(
+                  child: Icon(Icons.image, size: 50, color: Colors.grey),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: _pickImage,
+                    child: Text(_selectedImage != null || _imageUrl != null ? 'Change Image' : 'Select Image'),
+                  ),
+                  if (_selectedImage != null || _imageUrl != null)
+                    SizedBox(width: 8),
+                  if (_selectedImage != null || _imageUrl != null)
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedImage = null;
+                          _imageUrl = null;
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: Text('Remove'),
+                    ),
+                ],
+              ),
+              SizedBox(height: 16),
               TextFormField(
                 controller: _titleController,
                 decoration: InputDecoration(labelText: 'Title'),
@@ -104,10 +199,6 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 maxLines: 3,
                 validator: (value) =>
                 value!.isEmpty ? 'Description is required' : null,
-              ),
-              TextFormField(
-                controller: _imageUrlController,
-                decoration: InputDecoration(labelText: 'Image URL (optional)'),
               ),
               SwitchListTile(
                 title: Text('Online Event'),
@@ -151,17 +242,21 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
           child: Text('Cancel'),
         ),
         TextButton(
-          onPressed: () {
+          onPressed: () async {
             if (_formKey.currentState!.validate()) {
               final maxParticipants = _maxParticipantsController.text.isEmpty
                   ? null
-                  : int.tryParse(_maxParticipantsController.text); // Changed to tryParse
+                  : int.tryParse(_maxParticipantsController.text);
               if (maxParticipants == null && _maxParticipantsController.text.isNotEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Max Participants must be a valid number')),
                 );
                 return;
               }
+
+              // Upload the image if selected and get the URL
+              final uploadedImageUrl = await _uploadImageIfSelected();
+
               final event = EventDTO(
                 id: widget.event?.id ?? 0,
                 title: _titleController.text,
@@ -170,7 +265,7 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 endDateTime: _endDateTime,
                 isOnline: _isOnline,
                 location: _isOnline ? null : _locationController.text,
-                imageUrl: _imageUrlController.text.isNotEmpty ? _imageUrlController.text : null,
+                imageUrl: uploadedImageUrl,
                 maxParticipants: maxParticipants,
                 currentParticipants: widget.event?.currentParticipants ?? 0,
                 capacityLeft: widget.event?.capacityLeft ?? 0,
