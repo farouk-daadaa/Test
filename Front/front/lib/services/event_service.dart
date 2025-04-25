@@ -18,6 +18,7 @@ class EventDTO {
   final int currentParticipants;
   final int? capacityLeft;
   final String status;
+  bool isRegistered; // Add this field to track registration status
 
   EventDTO({
     required this.id,
@@ -33,6 +34,7 @@ class EventDTO {
     required this.currentParticipants,
     this.capacityLeft,
     required this.status,
+    this.isRegistered = false, // Default to false
   });
 
   factory EventDTO.fromJson(Map<String, dynamic> json) {
@@ -50,6 +52,7 @@ class EventDTO {
       currentParticipants: json['currentParticipants'],
       capacityLeft: json['capacityLeft'],
       status: json['status'],
+      isRegistered: json['isRegistered'] ?? false,
     );
   }
 
@@ -94,6 +97,29 @@ class AttendanceDTO {
   }
 }
 
+class MeetingDetails {
+  final String meetingLink;
+  final String meetingToken;
+  final String roomId;
+  final String title;
+
+  MeetingDetails({
+    required this.meetingLink,
+    required this.meetingToken,
+    required this.roomId,
+    required this.title,
+  });
+
+  factory MeetingDetails.fromJson(Map<String, dynamic> json) {
+    return MeetingDetails(
+      meetingLink: json['meetingLink'],
+      meetingToken: json['meetingToken'],
+      roomId: json['roomId'],
+      title: json['title'],
+    );
+  }
+}
+
 class EventService {
   final Dio _dio;
   final String baseUrl;
@@ -122,13 +148,69 @@ class EventService {
       );
       debugPrint('EventService: Response status: ${response.statusCode}, data: ${response.data}');
       if (response.statusCode == 200) {
-        return (response.data['content'] as List)
+        final events = (response.data['content'] as List)
             .map((json) => EventDTO.fromJson(json))
             .toList();
+
+        // Fetch the user's registered events to determine registration status
+        final registeredEvents = await getMyRegisteredEvents();
+        final registeredEventIds = registeredEvents.map((event) => event.id).toSet();
+
+        for (var event in events) {
+          event.isRegistered = registeredEventIds.contains(event.id);
+        }
+
+        return events;
       }
       throw Exception('Failed to load events: ${response.statusCode}');
     } catch (e) {
       debugPrint('EventService: Error fetching events: $e');
+      throw _handleError(e);
+    }
+  }
+
+  Future<List<EventDTO>> getMyRegisteredEvents() async {
+    try {
+      debugPrint('EventService: Fetching registered events');
+      final response = await _dio.get('/api/events/my-events');
+      debugPrint('EventService: Registered events response: ${response.statusCode}, data: ${response.data}');
+      if (response.statusCode == 200) {
+        return (response.data as List)
+            .map((json) => EventDTO.fromJson(json))
+            .toList();
+      }
+      throw Exception('Failed to load registered events: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('EventService: Error fetching registered events: $e');
+      throw _handleError(e);
+    }
+  }
+
+  Future<MeetingDetails> joinOnlineEvent(int eventId) async {
+    try {
+      debugPrint('EventService: Joining online event $eventId');
+      final response = await _dio.get('/api/events/$eventId/join');
+      debugPrint('EventService: Join event response: ${response.statusCode}, data: ${response.data}');
+      if (response.statusCode == 200) {
+        return MeetingDetails.fromJson(response.data);
+      }
+      throw Exception('Failed to join event: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('EventService: Error joining event: $e');
+      throw _handleError(e);
+    }
+  }
+
+  Future<void> registerForEvent(int eventId) async {
+    try {
+      debugPrint('EventService: Registering for event $eventId');
+      final response = await _dio.post('/api/events/$eventId/register');
+      debugPrint('EventService: Register response: ${response.statusCode}, data: ${response.data}');
+      if (response.statusCode != 200) {
+        throw Exception('Failed to register for event: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('EventService: Error registering for event: $e');
       throw _handleError(e);
     }
   }
@@ -254,7 +336,7 @@ class EventService {
       });
 
       final response = await _dio.post(
-        '/api/events/upload-image', // Corrected the endpoint path
+        '/api/events/upload-image',
         data: formData,
       );
 

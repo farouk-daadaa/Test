@@ -534,14 +534,23 @@ class _MeetingScreenState extends State<MeetingScreen> with TickerProviderStateM
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('join_time_${widget.meetingToken}');
 
-    // Role-based navigation
-    if (_isInstructor) {
+    // Retrieve the user's app role from SharedPreferences
+    final String? userRole = prefs.getString('user_role');
+
+    // Navigate based on the app role
+    if (userRole == 'ADMIN') {
+      // Admin: Navigate to Admin Dashboard
+      Navigator.pushNamedAndRemoveUntil(context, '/admin-dashboard', (Route<dynamic> route) => false);
+    } else if (_isInstructor) {
       // Instructor: Navigate to MySessionsView
-      Navigator.pushNamedAndRemoveUntil(context, '/my_sessions', (Route<dynamic> route) => false);
+      Navigator.pushNamedAndRemoveUntil(context, '/instructor-dashboard', (Route<dynamic> route) => false);
     } else {
       // Student: Navigate to HomeScreen
       Navigator.pushNamedAndRemoveUntil(context, '/home', (Route<dynamic> route) => false);
     }
+
+    // Clear the user role from SharedPreferences after navigation
+    await prefs.remove('user_role');
   }
 
   void _showParticipantsList() {
