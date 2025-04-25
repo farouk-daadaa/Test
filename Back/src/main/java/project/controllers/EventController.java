@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import project.dto.AttendanceDTO;
@@ -120,7 +121,15 @@ public class EventController {
 
             String username = authentication.getName();
             String roomId = meetingLink.replace("room://", "");
-            String meetingToken = hmsTokenService.generateHmsToken(roomId, username, "student");
+
+            // Determine the 100ms role based on the user's app role
+            String role = "student"; // Default role
+            boolean isAdmin = authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_ADMIN"));
+            if (isAdmin) {
+                role = "instructor"; // Admins get the instructor role
+            }
+
+            String meetingToken = hmsTokenService.generateHmsToken(roomId, username, role);
 
             Map<String, String> response = new HashMap<>();
             response.put("meetingLink", meetingLink);

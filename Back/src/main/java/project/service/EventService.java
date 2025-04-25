@@ -392,7 +392,9 @@ public class EventService {
             throw new EventServiceException(HttpStatus.BAD_REQUEST, "This is not an online event");
         }
 
-        if (!eventRegistrationRepository.existsByEventAndStudent(event, user)) {
+        // Skip registration check for admins
+        boolean isAdmin = user.getUserRole().getUserRoleName().equals(UserRoleName.ADMIN);
+        if (!isAdmin && !eventRegistrationRepository.existsByEventAndStudent(event, user)) {
             throw new EventServiceException(HttpStatus.FORBIDDEN, "You are not registered for this event");
         }
 
