@@ -12,7 +12,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'RouteView.dart'; // Import the new RouteView
+import 'RouteView.dart';
 
 class EventDetailView extends StatefulWidget {
   final EventDTO event;
@@ -35,12 +35,13 @@ class _EventDetailViewState extends State<EventDetailView> {
   late Timer _timer;
   Duration _timeUntilEvent = Duration.zero;
   bool _isDuringEvent = false;
+  bool _isEventEnded = false;
   String? _userRole;
   String? _username;
   bool _isLoadingUserDetails = true;
-  LatLng? _eventLocation; // To store the geocoded event location
+  LatLng? _eventLocation;
   bool _isLoadingLocation = false;
-  GoogleMapController? _mapController; // To control the map
+  GoogleMapController? _mapController;
 
   static const String _googleApiKey = 'AIzaSyCjUgGySYoos2UeHYmd6-MpIDLno2Sy2Ps';
 
@@ -83,28 +84,83 @@ class _EventDetailViewState extends State<EventDetailView> {
     setState(() {
       _timeUntilEvent = _event.startDateTime.difference(now);
       _isDuringEvent = now.isAfter(_event.startDateTime) && now.isBefore(_event.endDateTime);
+      _isEventEnded = now.isAfter(_event.endDateTime);
       debugPrint('Current time: $now');
       debugPrint('Event start: ${_event.startDateTime}, end: ${_event.endDateTime}');
-      debugPrint('Time until event: $_timeUntilEvent, isDuringEvent: $_isDuringEvent');
+      debugPrint('Time until event: $_timeUntilEvent, isDuringEvent: $_isDuringEvent, isEventEnded: $_isEventEnded');
     });
   }
 
-  String _formatCountdown(Duration duration) {
-    if (duration.isNegative) {
-      return _event.isOnline ? "Live now" : "Happening now";
+  Widget _buildCountdownTimer(Duration duration) {
+    if (_isEventEnded) {
+      return Text(
+        "Event ended",
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Colors.red,
+        ),
+      );
     }
+
+    if (_isDuringEvent) {
+      return Text(
+        _event.isOnline ? "Live now" : "Happening now",
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Colors.green,
+        ),
+      );
+    }
+
     final days = duration.inDays;
     final hours = duration.inHours % 24;
     final minutes = duration.inMinutes % 60;
-    if (days > 0) {
-      return "Starts in $days day${days == 1 ? '' : 's'}";
-    } else if (hours > 0) {
-      return "Starts in $hours hour${hours == 1 ? '' : 's'}";
-    } else if (minutes > 0) {
-      return "Starts in $minutes minute${minutes == 1 ? '' : 's'}";
-    } else {
-      return "Starts in less than a minute";
-    }
+    final seconds = duration.inSeconds % 60;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildTimeBox(days, "DAYS"),
+        Text(" : ", style: TextStyle(fontSize: 16, color: Colors.black87)),
+        _buildTimeBox(hours, "HRS"),
+        Text(" : ", style: TextStyle(fontSize: 16, color: Colors.black87)),
+        _buildTimeBox(minutes, "MINS"),
+        Text(" : ", style: TextStyle(fontSize: 16, color: Colors.black87)),
+        _buildTimeBox(seconds, "SECS"),
+      ],
+    );
+  }
+
+  Widget _buildTimeBox(int value, String label) {
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            value.toString().padLeft(2, '0'),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+        SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _geocodeLocation(String address) async {
@@ -143,7 +199,6 @@ class _EventDetailViewState extends State<EventDetailView> {
   }
 
   Future<LatLng?> _getUserLocation() async {
-    // Check if location services are enabled
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -160,7 +215,6 @@ class _EventDetailViewState extends State<EventDetailView> {
       return null;
     }
 
-    // Force recheck permissions every time
     PermissionStatus permission = await Permission.locationWhenInUse.request();
     if (permission.isDenied) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -192,7 +246,6 @@ class _EventDetailViewState extends State<EventDetailView> {
       return null;
     }
 
-    // Get the current position using LocationSettings
     try {
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -240,6 +293,7 @@ class _EventDetailViewState extends State<EventDetailView> {
           eventLocation: _eventLocation!,
           userLocation: currentLocation,
           googleApiKey: _googleApiKey,
+          isEventEnded: _isEventEnded,
         ),
       ),
     );
@@ -450,14 +504,7 @@ class _EventDetailViewState extends State<EventDetailView> {
           ],
         ),
         SizedBox(height: 12),
-        Text(
-          _formatCountdown(_timeUntilEvent),
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _timeUntilEvent.isNegative ? Colors.green : Colors.black87,
-          ),
-        ),
+        _buildCountdownTimer(_timeUntilEvent),
         if (!_isLoadingUserDetails && _userRole != null) ...[
           SizedBox(height: 20),
           Center(child: _buildActionButton()),
@@ -514,14 +561,7 @@ class _EventDetailViewState extends State<EventDetailView> {
           ],
         ),
         SizedBox(height: 12),
-        Text(
-          _formatCountdown(_timeUntilEvent),
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: _timeUntilEvent.isNegative ? Colors.green : Colors.black87,
-          ),
-        ),
+        _buildCountdownTimer(_timeUntilEvent),
         if (_event.location != null && _event.location!.isNotEmpty) ...[
           SizedBox(height: 20),
           Text(
@@ -574,11 +614,11 @@ class _EventDetailViewState extends State<EventDetailView> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: ElevatedButton.icon(
-                          onPressed: _navigateToRoutePage,
+                          onPressed: _isEventEnded ? null : _navigateToRoutePage,
                           icon: Icon(Icons.directions, size: 18),
                           label: Text("Show Route"),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blueAccent,
+                            backgroundColor: _isEventEnded ? Colors.grey : Colors.blueAccent,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
@@ -634,8 +674,8 @@ class _EventDetailViewState extends State<EventDetailView> {
   Widget _buildActionButton() {
     // For ADMIN users
     if (_userRole == 'ADMIN') {
-      // Only show "Join" button for online events during the event
-      if (_event.isOnline && _isDuringEvent) {
+      // Only show "Join" button for online events during the event and if not ended
+      if (_event.isOnline && _isDuringEvent && !_isEventEnded) {
         return ElevatedButton(
           onPressed: _handleJoin,
           style: ElevatedButton.styleFrom(
@@ -660,14 +700,46 @@ class _EventDetailViewState extends State<EventDetailView> {
       return Container();
     }
 
-    // For non-ADMIN users
+    // For non-ADMIN users (students)
     if (_userRole != 'ADMIN') {
+      // If the event has ended, show "Registered" in gray if already registered, otherwise no button
+      if (_isEventEnded) {
+        if (_event.isRegistered) {
+          return ElevatedButton(
+            onPressed: null, // Disabled
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey,
+              padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+              elevation: 5,
+            ),
+            child: Text(
+              "Registered",
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
+        }
+        return Container();
+      }
+
+      // If the event is currently happening and the student is not registered, show no button
+      if (_isDuringEvent && !_event.isRegistered) {
+        return Container();
+      }
+
+      // If the event hasn't ended and isn't currently happening, or the student is registered
       return ElevatedButton(
         onPressed: _event.isRegistered
-            ? (_isDuringEvent && _event.isOnline ? _handleJoin : null)
+            ? (_event.isOnline && _isDuringEvent ? _handleJoin : null)
             : _handleRegister,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _event.isRegistered && (!_isDuringEvent || !_event.isOnline)
+          backgroundColor: _event.isRegistered && !(_event.isOnline && _isDuringEvent)
               ? Colors.grey
               : Colors.blueAccent,
           padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
@@ -677,7 +749,9 @@ class _EventDetailViewState extends State<EventDetailView> {
           elevation: 5,
         ),
         child: Text(
-          _event.isRegistered ? (_event.isOnline ? "Join" : "Registered") : "Register",
+          _event.isRegistered
+              ? (_event.isOnline && _isDuringEvent ? "Join" : "Registered")
+              : "Register",
           style: TextStyle(
             fontSize: 18,
             color: Colors.white,

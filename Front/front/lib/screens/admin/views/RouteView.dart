@@ -16,12 +16,14 @@ class RouteView extends StatefulWidget {
   final LatLng eventLocation;
   final LatLng userLocation;
   final String googleApiKey;
+  final bool isEventEnded; // New parameter to check if event has ended
 
   const RouteView({
     Key? key,
     required this.eventLocation,
     required this.userLocation,
     required this.googleApiKey,
+    required this.isEventEnded,
   }) : super(key: key);
 
   @override
@@ -654,11 +656,11 @@ class _RouteViewState extends State<RouteView> with SingleTickerProviderStateMix
                   ),
                   SizedBox(height: 12),
                   ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _startNavigation,
+                    onPressed: _isLoading || widget.isEventEnded ? null : _startNavigation,
                     icon: Icon(Icons.navigation, size: 18),
                     label: Text("Go Now"),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.secondary,
+                      backgroundColor: widget.isEventEnded ? Colors.grey : AppColors.secondary,
                       foregroundColor: Colors.white,
                       padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
                       shape: RoundedRectangleBorder(

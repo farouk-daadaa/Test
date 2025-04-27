@@ -7,7 +7,6 @@ import 'package:front/screens/admin/views/attendance_view.dart';
 import 'package:front/screens/admin/views/qr_scanner_view.dart';
 import 'package:front/screens/admin/views/event_detail_view.dart';
 import 'package:front/constants/colors.dart';
-import 'package:front/main.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 
 class EventsView extends StatefulWidget {
@@ -59,6 +58,13 @@ class _EventsViewState extends State<EventsView> {
     if (relativeUrl == null || relativeUrl.isEmpty) return '';
     // Prepend the baseUrl to the relative path
     return '${_eventService.baseUrl}$relativeUrl';
+  }
+
+  // Helper method to check if the event is editable (not ongoing or ended)
+  bool _isEventEditable(EventDTO event) {
+    final now = DateTime.now();
+    // Event is editable if it hasn't started yet (current time is before startDateTime)
+    return now.isBefore(event.startDateTime);
   }
 
   @override
@@ -168,10 +174,12 @@ class _EventsViewState extends State<EventsView> {
                         PopupMenuButton<String>(
                           onSelected: (value) => _handleMenuAction(context, value, event),
                           itemBuilder: (context) {
-                            final items = [
-                              PopupMenuItem(value: 'edit', child: Text('Edit')),
-                              PopupMenuItem(value: 'delete', child: Text('Delete')),
-                            ];
+                            final items = <PopupMenuItem<String>>[];
+                            // Only add "Edit" if the event is editable (not ongoing or ended)
+                            if (_isEventEditable(event)) {
+                              items.add(PopupMenuItem(value: 'edit', child: Text('Edit')));
+                            }
+                            items.add(PopupMenuItem(value: 'delete', child: Text('Delete')));
                             if (!event.isOnline) {
                               items.add(PopupMenuItem(value: 'attendance', child: Text('View Attendance')));
                               items.add(PopupMenuItem(value: 'scan', child: Text('Scan QR Code')));
