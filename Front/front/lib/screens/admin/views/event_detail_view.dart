@@ -7,6 +7,9 @@ import 'package:front/screens/instructor/views/LobbyScreen.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class EventDetailView extends StatefulWidget {
   final EventDTO event;
@@ -32,6 +35,10 @@ class _EventDetailViewState extends State<EventDetailView> {
   String? _userRole;
   String? _username;
   bool _isLoadingUserDetails = true;
+  LatLng? _eventLocation; // To store the geocoded location coordinates
+  bool _isLoadingLocation = false;
+
+  static const String _googleApiKey = 'AIzaSyCjUgGySYoos2UeHYmd6-MpIDLno2Sy2Ps';
 
   @override
   void initState() {
@@ -42,6 +49,9 @@ class _EventDetailViewState extends State<EventDetailView> {
       _updateCountdown();
     });
     _loadUserDetails();
+    if (!_event.isOnline && _event.location != null && _event.location!.isNotEmpty) {
+      _geocodeLocation(_event.location!);
+    }
   }
 
   @override
@@ -76,19 +86,54 @@ class _EventDetailViewState extends State<EventDetailView> {
 
   String _formatCountdown(Duration duration) {
     if (duration.isNegative) {
-      return "Live now";
+      return _event.isOnline ? "Live now" : "Happening now";
     }
     final days = duration.inDays;
     final hours = duration.inHours % 24;
     final minutes = duration.inMinutes % 60;
     if (days > 0) {
-      return "Live in $days day${days == 1 ? '' : 's'}";
+      return "Starts in $days day${days == 1 ? '' : 's'}";
     } else if (hours > 0) {
-      return "Live in $hours hour${hours == 1 ? '' : 's'}";
+      return "Starts in $hours hour${hours == 1 ? '' : 's'}";
     } else if (minutes > 0) {
-      return "Live in $minutes minute${minutes == 1 ? '' : 's'}";
+      return "Starts in $minutes minute${minutes == 1 ? '' : 's'}";
     } else {
-      return "Live in less than a minute";
+      return "Starts in less than a minute";
+    }
+  }
+
+  Future<void> _geocodeLocation(String address) async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+
+    final encodedAddress = Uri.encodeComponent(address);
+    final url = 'https://maps.googleapis.com/maps/api/geocode/json?address=$encodedAddress&key=$_googleApiKey';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 'OK') {
+          final location = data['results'][0]['geometry']['location'];
+          setState(() {
+            _eventLocation = LatLng(location['lat'], location['lng']);
+            _isLoadingLocation = false;
+          });
+        } else {
+          throw Exception('Geocoding failed: ${data['status']}');
+        }
+      } else {
+        throw Exception('Failed to geocode location: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Error geocoding location: $e');
+      setState(() {
+        _isLoadingLocation = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load event location on map')),
+      );
     }
   }
 
@@ -119,9 +164,8 @@ class _EventDetailViewState extends State<EventDetailView> {
     try {
       final meetingDetails = await widget.eventService.joinOnlineEvent(_event.id);
 
-      // Save _userRole to SharedPreferences
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_role', _userRole!); // Save the role
+      await prefs.setString('user_role', _userRole!);
 
       Navigator.push(
         context,
@@ -150,6 +194,7 @@ class _EventDetailViewState extends State<EventDetailView> {
             expandedHeight: 200.0,
             floating: false,
             pinned: true,
+            backgroundColor: Colors.black,
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -158,8 +203,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ? Image.network(
                     '${widget.eventService.baseUrl}${_event.imageUrl}',
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _buildGradientBackground(),
+                    errorBuilder: (context, error, stackTrace) => _buildGradientBackground(),
                   )
                       : _buildGradientBackground(),
                   Container(
@@ -168,8 +212,27 @@ class _EventDetailViewState extends State<EventDetailView> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.7),
+                          Colors.black.withOpacity(0.1),
+                          Colors.black.withOpacity(0.6),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    child: Text(
+                      _event.title,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black.withOpacity(0.5),
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                          ),
                         ],
                       ),
                     ),
@@ -188,70 +251,8 @@ class _EventDetailViewState extends State<EventDetailView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    _event.title,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    "Join us for an exciting virtual experience!",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                  SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          "LIVESTREAM",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _event.getFormattedDate(),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[800],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    _formatCountdown(_timeUntilEvent),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _timeUntilEvent.isNegative ? Colors.green : Colors.black87,
-                    ),
-                  ),
-                  SizedBox(height: 20),
-                  // Show Register/Join Button based on user role and event status
-                  if (!_isLoadingUserDetails && _userRole != null) ...[
-                    Center(
-                      child: _buildActionButton(),
-                    ),
-                    SizedBox(height: 24),
-                  ],
+                  if (_event.isOnline) _buildOnlineEventDetails() else _buildInPersonEventDetails(),
+                  SizedBox(height: 24),
                   Text(
                     "About This Event",
                     style: TextStyle(
@@ -284,68 +285,6 @@ class _EventDetailViewState extends State<EventDetailView> {
                     ),
                   ),
                   SizedBox(height: 24),
-                  Text(
-                    "Organized by The Bridge",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Container(
-                    padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Image.asset(
-                          'assets/logo.png',
-                          width: 40,
-                          height: 40,
-                          errorBuilder: (context, error, stackTrace) => Icon(
-                            Icons.business,
-                            size: 40,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "The Bridge Team",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                "Online",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: 24),
                 ],
               ),
             ),
@@ -355,13 +294,217 @@ class _EventDetailViewState extends State<EventDetailView> {
     );
   }
 
+  Widget _buildOnlineEventDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.blueAccent,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                "ONLINE EVENT",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _event.getFormattedDate(),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(Icons.people, color: Colors.grey[600], size: 20),
+            SizedBox(width: 8),
+            Text(
+              '${_event.currentParticipants} / ${_event.maxParticipants ?? '∞'} attendees',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        Text(
+          _formatCountdown(_timeUntilEvent),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: _timeUntilEvent.isNegative ? Colors.green : Colors.black87,
+          ),
+        ),
+        if (!_isLoadingUserDetails && _userRole != null) ...[
+          SizedBox(height: 20),
+          Center(child: _buildActionButton()),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInPersonEventDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.green,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                "IN-PERSON EVENT",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _event.getFormattedDate(),
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                ),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(Icons.people, color: Colors.grey[600], size: 20),
+            SizedBox(width: 8),
+            Text(
+              '${_event.currentParticipants} / ${_event.maxParticipants ?? '∞'} attendees',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12),
+        Text(
+          _formatCountdown(_timeUntilEvent),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: _timeUntilEvent.isNegative ? Colors.green : Colors.black87,
+          ),
+        ),
+        if (_event.location != null && _event.location!.isNotEmpty) ...[
+          SizedBox(height: 20),
+          Text(
+            "Location",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          SizedBox(height: 8),
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.location_on, color: Colors.redAccent, size: 24),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _event.location!,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 12),
+                if (_isLoadingLocation)
+                  Center(child: CircularProgressIndicator())
+                else if (_eventLocation != null)
+                  SizedBox(
+                    height: 200,
+                    child: GoogleMap(
+                      initialCameraPosition: CameraPosition(
+                        target: _eventLocation!,
+                        zoom: 15,
+                      ),
+                      markers: {
+                        Marker(
+                          markerId: MarkerId('event_location'),
+                          position: _eventLocation!,
+                          infoWindow: InfoWindow(title: _event.title),
+                        ),
+                      },
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                      zoomControlsEnabled: true,
+                    ),
+                  )
+                else
+                  Text(
+                    'Unable to load map for this location.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        if (!_isLoadingUserDetails && _userRole != null) ...[
+          SizedBox(height: 20),
+          Center(child: _buildActionButton()),
+        ],
+      ],
+    );
+  }
+
   Widget _buildActionButton() {
-    // Admins can join directly if the event is ongoing
     if (_userRole == 'ADMIN' && _isDuringEvent) {
       return ElevatedButton(
-        onPressed: _handleJoin,
+        onPressed: _event.isOnline ? _handleJoin : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueAccent,
+          backgroundColor: _event.isOnline ? Colors.blueAccent : Colors.grey,
           padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(30),
@@ -379,14 +522,13 @@ class _EventDetailViewState extends State<EventDetailView> {
       );
     }
 
-    // Non-admins see Register or Join based on registration status
     if (_userRole != 'ADMIN') {
       return ElevatedButton(
         onPressed: _event.isRegistered
-            ? (_isDuringEvent ? _handleJoin : null)
+            ? (_isDuringEvent && _event.isOnline ? _handleJoin : null)
             : _handleRegister,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _event.isRegistered && !_isDuringEvent
+          backgroundColor: _event.isRegistered && (!_isDuringEvent || !_event.isOnline)
               ? Colors.grey
               : Colors.blueAccent,
           padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
@@ -396,7 +538,7 @@ class _EventDetailViewState extends State<EventDetailView> {
           elevation: 5,
         ),
         child: Text(
-          _event.isRegistered ? "Join" : "Register",
+          _event.isRegistered ? (_event.isOnline ? "Join" : "Registered") : "Register",
           style: TextStyle(
             fontSize: 18,
             color: Colors.white,
@@ -406,7 +548,6 @@ class _EventDetailViewState extends State<EventDetailView> {
       );
     }
 
-    // If none of the above conditions are met, return an empty container
     return Container();
   }
 

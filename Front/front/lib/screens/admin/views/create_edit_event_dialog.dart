@@ -5,6 +5,8 @@ import 'package:front/services/event_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
+import 'MapPickerScreen.dart'; // Import the new MapPickerScreen
+
 class CreateEditEventDialog extends StatefulWidget {
   final EventDTO? event;
   final Function(EventDTO) onSave;
@@ -106,11 +108,24 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     }
   }
 
+  Future<void> _selectLocation() async {
+    final selectedAddress = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MapPickerScreen(initialAddress: _locationController.text),
+      ),
+    );
+    if (selectedAddress != null) {
+      setState(() {
+        _locationController.text = selectedAddress;
+      });
+    }
+  }
+
   Future<String?> _uploadImageIfSelected() async {
     if (_selectedImage != null) {
       try {
         String relativeUrl = await widget.eventService.uploadImage(_selectedImage!);
-        // The backend returns a relative path, so we don't need to fix it
         return relativeUrl;
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -122,7 +137,6 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
     return _imageUrl;
   }
 
-  // Helper method to construct the full image URL
   String _getFullImageUrl(String? relativeUrl) {
     if (relativeUrl == null || relativeUrl.isEmpty) return '';
     return '${widget.eventService.baseUrl}$relativeUrl';
@@ -138,7 +152,6 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Image Display and Selection
               Container(
                 height: 150,
                 width: double.infinity,
@@ -154,7 +167,7 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 )
                     : _imageUrl != null && _imageUrl!.isNotEmpty
                     ? Image.network(
-                  _getFullImageUrl(_imageUrl), // Construct the full URL
+                  _getFullImageUrl(_imageUrl),
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => Center(
                     child: Icon(Icons.broken_image, size: 50, color: Colors.grey),
@@ -190,15 +203,13 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
               TextFormField(
                 controller: _titleController,
                 decoration: InputDecoration(labelText: 'Title'),
-                validator: (value) =>
-                value!.isEmpty ? 'Title is required' : null,
+                validator: (value) => value!.isEmpty ? 'Title is required' : null,
               ),
               TextFormField(
                 controller: _descriptionController,
                 decoration: InputDecoration(labelText: 'Description'),
                 maxLines: 3,
-                validator: (value) =>
-                value!.isEmpty ? 'Description is required' : null,
+                validator: (value) => value!.isEmpty ? 'Description is required' : null,
               ),
               SwitchListTile(
                 title: Text('Online Event'),
@@ -207,11 +218,28 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 onChanged: (value) => setState(() => _isOnline = value),
               ),
               if (!_isOnline)
-                TextFormField(
-                  controller: _locationController,
-                  decoration: InputDecoration(labelText: 'Location'),
-                  validator: (value) =>
-                  value!.isEmpty && !_isOnline ? 'Location is required' : null,
+                ListTile(
+                  title: Text(
+                    _locationController.text.isEmpty
+                        ? 'Select Location'
+                        : _locationController.text,
+                    style: TextStyle(
+                      color: _locationController.text.isEmpty ? Colors.grey : Colors.black87,
+                    ),
+                  ),
+                  trailing: Icon(Icons.map),
+                  onTap: _selectLocation,
+                ),
+              if (!_isOnline)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _locationController.text.isEmpty ? 'Location is required' : '',
+                      style: TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  ),
                 ),
               TextFormField(
                 controller: _maxParticipantsController,
@@ -244,6 +272,12 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
         TextButton(
           onPressed: () async {
             if (_formKey.currentState!.validate()) {
+              if (!_isOnline && _locationController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Location is required for in-person events')),
+                );
+                return;
+              }
               final maxParticipants = _maxParticipantsController.text.isEmpty
                   ? null
                   : int.tryParse(_maxParticipantsController.text);
@@ -254,7 +288,6 @@ class _CreateEditEventDialogState extends State<CreateEditEventDialog> {
                 return;
               }
 
-              // Upload the image if selected and get the URL
               final uploadedImageUrl = await _uploadImageIfSelected();
 
               final event = EventDTO(

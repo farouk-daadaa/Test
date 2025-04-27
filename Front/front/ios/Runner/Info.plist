@@ -15,6 +15,12 @@
 <string>We need access to your microphone for video calls.</string>
 <key>NSPhotoLibraryUsageDescription</key>
 <string>We need access to your photo library to select images.</string>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>We need your location to show the event on the map and to center the map on your current position.</string>
+<key>io.flutter.embedded_views_preview</key>
+<true/>
+<key>GoogleMapsApiKey</key>
+<string>AIzaSyCjUgGySYoos2UeHYmd6-MpIDLno2Sy2Ps</string>
 
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
