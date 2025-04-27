@@ -74,6 +74,7 @@ class _EventsViewState extends State<EventsView> {
         backgroundColor: AppColors.primary,
         onPressed: () => _showCreateEditDialog(context),
         child: Icon(Icons.add),
+
       ),
       body: _eventsFuture == null
           ? Center(child: CircularProgressIndicator())
