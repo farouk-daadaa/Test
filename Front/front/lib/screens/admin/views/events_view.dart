@@ -26,10 +26,19 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   late TabController _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // Search and filter variables
+  final TextEditingController _searchController = TextEditingController();
+  bool _showSearchBar = false;
+  String _searchQuery = '';
+  bool? _filterOnline;
+  DateTime? _startDateFilter;
+  DateTime? _endDateFilter;
+  bool _showFilters = false;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this); // Updated to 4 tabs (ALL, UPCOMING, ONGOING, PAST)
     _initializeEvents();
     _initializeHMSSDK();
   }
@@ -41,6 +50,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     _hmsSDK.destroy();
     super.dispose();
   }
@@ -79,6 +89,16 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     });
   }
 
+  void _resetFilters() {
+    setState(() {
+      _searchQuery = '';
+      _searchController.clear();
+      _filterOnline = null;
+      _startDateFilter = null;
+      _endDateFilter = null;
+    });
+  }
+
   String _getFullImageUrl(String? relativeUrl) {
     if (relativeUrl == null || relativeUrl.isEmpty) return '';
     return '${_eventService.baseUrl}$relativeUrl';
@@ -89,20 +109,60 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     return now.isBefore(event.startDateTime);
   }
 
-  List<EventDTO> _filterEventsByTab(List<EventDTO> events, int tabIndex) {
+  List<EventDTO> _filterEvents(List<EventDTO> events) {
+    // First apply tab filter
     final now = DateTime.now();
-    switch (tabIndex) {
-      case 0: // Upcoming
-        return events.where((event) => now.isBefore(event.startDateTime)).toList();
-      case 1: // Ongoing
-        return events.where((event) =>
+    List<EventDTO> filteredEvents = [];
+
+    switch (_tabController.index) {
+      case 0: // ALL
+        filteredEvents = events; // Show all events
+        break;
+      case 1: // Upcoming
+        filteredEvents = events.where((event) => now.isBefore(event.startDateTime)).toList();
+        break;
+      case 2: // Ongoing
+        filteredEvents = events.where((event) =>
         now.isAfter(event.startDateTime) && now.isBefore(event.endDateTime)
         ).toList();
-      case 2: // Past
-        return events.where((event) => now.isAfter(event.endDateTime)).toList();
+        break;
+      case 3: // Past
+        filteredEvents = events.where((event) => now.isAfter(event.endDateTime)).toList();
+        break;
       default:
-        return events;
+        filteredEvents = events;
     }
+
+    // Apply search query
+    if (_searchQuery.isNotEmpty) {
+      filteredEvents = filteredEvents.where((event) =>
+          event.title.toLowerCase().contains(_searchQuery.toLowerCase())
+      ).toList();
+    }
+
+    // Apply online/in-person filter
+    if (_filterOnline != null) {
+      filteredEvents = filteredEvents.where((event) =>
+      event.isOnline == _filterOnline
+      ).toList();
+    }
+
+    // Apply date range filter
+    if (_startDateFilter != null) {
+      filteredEvents = filteredEvents.where((event) =>
+      event.startDateTime.isAfter(_startDateFilter!) ||
+          event.startDateTime.isAtSameMomentAs(_startDateFilter!)
+      ).toList();
+    }
+
+    if (_endDateFilter != null) {
+      filteredEvents = filteredEvents.where((event) =>
+      event.startDateTime.isBefore(_endDateFilter!) ||
+          event.startDateTime.isAtSameMomentAs(_endDateFilter!)
+      ).toList();
+    }
+
+    return filteredEvents;
   }
 
   @override
@@ -113,7 +173,23 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text(
+        title: _showSearchBar
+            ? TextField(
+          controller: _searchController,
+          decoration: InputDecoration(
+            hintText: 'Search events...',
+            border: InputBorder.none,
+            hintStyle: TextStyle(color: Colors.grey.shade400),
+          ),
+          style: TextStyle(color: Colors.black87, fontSize: 16),
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+            });
+          },
+          autofocus: true,
+        )
+            : Text(
           'Events',
           style: TextStyle(
             color: Colors.black87,
@@ -121,14 +197,37 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
             fontSize: 22,
           ),
         ),
+        leading: _showSearchBar
+            ? IconButton(
+          icon: Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () {
+            setState(() {
+              _showSearchBar = false;
+              _searchQuery = '';
+              _searchController.clear();
+            });
+          },
+        )
+            : null,
         actions: [
           IconButton(
-            icon: Icon(Icons.search, color: Colors.black87),
+            icon: Icon(_showSearchBar ? Icons.clear : Icons.search, color: Colors.black87),
             onPressed: () {
-              // Implement search functionality
-              ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Search functionality coming soon'))
-              );
+              setState(() {
+                _showSearchBar = !_showSearchBar;
+                if (!_showSearchBar) {
+                  _searchQuery = '';
+                  _searchController.clear();
+                }
+              });
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.filter_list, color: Colors.black87),
+            onPressed: () {
+              setState(() {
+                _showFilters = !_showFilters;
+              });
             },
           ),
           IconButton(
@@ -137,46 +236,231 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(48),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Colors.grey.shade200,
-                  width: 1,
+          preferredSize: Size.fromHeight(_showFilters ? 144 : 48),
+          child: Column(
+            children: [
+              if (_showFilters) _buildFilterOptions(),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.grey.shade200,
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.primary,
+                  unselectedLabelColor: Colors.grey.shade600,
+                  indicatorColor: AppColors.primary,
+                  indicatorWeight: 3,
+                  labelStyle: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                  tabs: [
+                    Tab(text: 'ALL'), // Added ALL tab
+                    Tab(text: 'UPCOMING'),
+                    Tab(text: 'ONGOING'),
+                    Tab(text: 'PAST'),
+                  ],
+                  onTap: (index) {
+                    setState(() {});
+                  },
                 ),
               ),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: Colors.grey.shade600,
-              indicatorColor: AppColors.primary,
-              indicatorWeight: 3,
-              labelStyle: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-              tabs: [
-                Tab(text: 'UPCOMING'),
-                Tab(text: 'ONGOING'),
-                Tab(text: 'PAST'),
-              ],
-              onTap: (index) {
-                setState(() {});
-              },
-            ),
+            ],
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showCreateEditDialog(context),
         backgroundColor: AppColors.primary,
-        child: Icon(Icons.add),
         elevation: 4,
+        child: Icon(
+          Icons.add,
+          color: Colors.white,
+        ),
       ),
+
       body: _buildEventsList(),
     );
+  }
+
+  Widget _buildFilterOptions() {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Filters',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: Colors.grey.shade800,
+                ),
+              ),
+              Spacer(),
+              TextButton(
+                onPressed: () {
+                  _resetFilters();
+                },
+                child: Text('Reset'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size(0, 30),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Row(
+            children: [
+              // Date range filter
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _showDateRangePicker(),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.date_range, size: 16, color: Colors.grey.shade600),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _getDateRangeText(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _startDateFilter != null || _endDateFilter != null
+                                  ? Colors.black87
+                                  : Colors.grey.shade600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: 8),
+              // Event type filter
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    _buildEventTypeFilterButton(true, 'Online'),
+                    _buildEventTypeFilterButton(false, 'In-Person'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventTypeFilterButton(bool isOnline, String label) {
+    final isSelected = _filterOnline == isOnline;
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (_filterOnline == isOnline) {
+            _filterOnline = null; // Deselect if already selected
+          } else {
+            _filterOnline = isOnline;
+          }
+        });
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+            width: isSelected ? 1 : 0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isOnline ? Icons.videocam : Icons.location_on,
+              size: 16,
+              color: isSelected ? AppColors.primary : Colors.grey.shade600,
+            ),
+            SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: isSelected ? AppColors.primary : Colors.grey.shade600,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getDateRangeText() {
+    if (_startDateFilter != null && _endDateFilter != null) {
+      return '${DateFormat('MMM d').format(_startDateFilter!)} - ${DateFormat('MMM d').format(_endDateFilter!)}';
+    } else if (_startDateFilter != null) {
+      return 'From ${DateFormat('MMM d').format(_startDateFilter!)}';
+    } else if (_endDateFilter != null) {
+      return 'Until ${DateFormat('MMM d').format(_endDateFilter!)}';
+    } else {
+      return 'Select date range';
+    }
+  }
+
+  void _showDateRangePicker() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      initialDateRange: _startDateFilter != null && _endDateFilter != null
+          ? DateTimeRange(start: _startDateFilter!, end: _endDateFilter!)
+          : null,
+      builder: (BuildContext context, Widget? child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDateFilter = picked.start;
+        _endDateFilter = picked.end;
+      });
+    }
   }
 
   Widget _buildEventsList() {
@@ -200,13 +484,10 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           return _buildNoEventsState();
         }
 
-        final filteredEvents = _filterEventsByTab(
-            snapshot.data!,
-            _tabController.index
-        );
+        final filteredEvents = _filterEvents(snapshot.data!);
 
         if (filteredEvents.isEmpty) {
-          return _buildEmptyTabState(_tabController.index);
+          return _buildNoMatchingEventsState();
         }
 
         return RefreshIndicator(
@@ -352,7 +633,10 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           SizedBox(height: 32),
           ElevatedButton.icon(
             onPressed: () => _showCreateEditDialog(context),
-            icon: Icon(Icons.add),
+            icon: Icon(
+              Icons.add,
+              color: Colors.white,
+            ),
             label: Text('Create Event'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -362,6 +646,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
               ),
             ),
           ),
+
         ],
       ),
     );
@@ -408,7 +693,10 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           SizedBox(height: 32),
           ElevatedButton.icon(
             onPressed: () => _showCreateEditDialog(context),
-            icon: Icon(Icons.add),
+            icon: Icon(
+              Icons.add,
+              color: Colors.white,
+            ),
             label: Text('Create Event'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -418,45 +706,25 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
               ),
             ),
           ),
+
         ],
       ),
     );
   }
 
-  Widget _buildEmptyTabState(int tabIndex) {
-    String message;
-    IconData icon;
-
-    switch (tabIndex) {
-      case 0:
-        message = 'No upcoming events';
-        icon = Icons.event_available;
-        break;
-      case 1:
-        message = 'No ongoing events';
-        icon = Icons.event_busy;
-        break;
-      case 2:
-        message = 'No past events';
-        icon = Icons.history;
-        break;
-      default:
-        message = 'No events found';
-        icon = Icons.event_note;
-    }
-
+  Widget _buildNoMatchingEventsState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            icon,
+            Icons.search_off,
             size: 64,
             color: Colors.grey.shade400,
           ),
           SizedBox(height: 16),
           Text(
-            message,
+            'No matching events found',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
@@ -465,27 +733,28 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           ),
           SizedBox(height: 8),
           Text(
-            tabIndex == 0 ? 'Create a new event to get started' : 'Check back later',
+            'Try adjusting your filters',
             style: TextStyle(
               color: Colors.grey.shade500,
               fontSize: 14,
             ),
           ),
-          if (tabIndex == 0) ...[
-            SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _showCreateEditDialog(context),
-              icon: Icon(Icons.add),
-              label: Text('Create Event'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+          SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _resetFilters,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
             ),
-          ],
+            child: Text(
+              'Reset Filters',
+              style: TextStyle(color: Colors.white), // 👈 Add this line
+            ),
+          ),
+
         ],
       ),
     );
@@ -571,39 +840,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                       )
                           : _buildPlaceholderImage(),
                     ),
-                    // Status badge
-                    Positioned(
-                      top: 16,
-                      left: 16,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: statusColor.withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isUpcoming ? Icons.event_available :
-                              isOngoing ? Icons.event_note : Icons.event_busy,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              statusText,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Time info for upcoming events
+                    // Time info for upcoming events (only countdown)
                     if (timeInfo.isNotEmpty)
                       Positioned(
                         top: 16,
@@ -624,39 +861,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                           ),
                         ),
                       ),
-                    // Online/In-person badge
-                    Positioned(
-                      bottom: 16,
-                      right: 16,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: event.isOnline ?
-                          Colors.indigo.withOpacity(0.8) :
-                          Colors.amber.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              event.isOnline ? Icons.videocam : Icons.location_on,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                            SizedBox(width: 4),
-                            Text(
-                              event.isOnline ? 'Online' : 'In-Person',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
 
@@ -720,7 +924,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                       ),
                       SizedBox(height: 12),
 
-                      // Location or Meeting Link
+                      // Location (without meeting link)
                       Row(
                         children: [
                           Container(
@@ -739,7 +943,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                           Expanded(
                             child: Text(
                               event.isOnline
-                                  ? (event.meetingLink ?? 'Online Meeting')
+                                  ? 'Online Event'
                                   : (event.location ?? 'No location specified'),
                               style: TextStyle(
                                 fontSize: 14,
@@ -839,61 +1043,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
 
                       // Action buttons
                       SizedBox(height: 20),
-                      Row(
-                        children: [
-                          if (!event.isOnline && !isPast) ...[
-                            _buildActionButton(
-                              icon: Icons.qr_code_scanner,
-                              label: 'Scan QR',
-                              color: Colors.indigo,
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => QRScannerView(eventId: event.id),
-                                  ),
-                                );
-                              },
-                            ),
-                            SizedBox(width: 8),
-                          ],
-                          if (!event.isOnline) ...[
-                            _buildActionButton(
-                              icon: Icons.people,
-                              label: 'Attendance',
-                              color: Colors.teal,
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AttendanceView(
-                                      eventId: event.id,
-                                      eventTitle: event.title,
-                                      isOnline: event.isOnline,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                          Spacer(),
-                          if (_isEventEditable(event)) ...[
-                            _buildActionButton(
-                              icon: Icons.edit,
-                              label: 'Edit',
-                              color: Colors.amber.shade700,
-                              onPressed: () => _showCreateEditDialog(context, event: event),
-                            ),
-                            SizedBox(width: 8),
-                          ],
-                          _buildActionButton(
-                            icon: Icons.delete,
-                            label: 'Delete',
-                            color: Colors.red.shade400,
-                            onPressed: () => _confirmDelete(context, event),
-                          ),
-                        ],
-                      ),
+                      _buildActionButtonsRow(event, isPast),
                     ],
                   ),
                 ),
@@ -903,6 +1053,141 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
         ),
       ),
     );
+  }
+
+  // Method to fix the overflow issue with action buttons
+  Widget _buildActionButtonsRow(EventDTO event, bool isPast) {
+    // For in-person events that aren't past and have all buttons
+    if (!event.isOnline && !isPast && _isEventEditable(event)) {
+      return Column(
+        children: [
+          // First row with Scan QR and Attendance
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.qr_code_scanner,
+                  label: 'Scan QR',
+                  color: Colors.indigo,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => QRScannerView(eventId: event.id),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.people,
+                  label: 'Attendance',
+                  color: Colors.teal,
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AttendanceView(
+                          eventId: event.id,
+                          eventTitle: event.title,
+                          isOnline: event.isOnline,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          // Second row with Edit and Delete
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.edit,
+                  label: 'Edit',
+                  color: Colors.amber.shade700,
+                  onPressed: () => _showCreateEditDialog(context, event: event),
+                ),
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: _buildActionButton(
+                  icon: Icons.delete,
+                  label: 'Delete',
+                  color: Colors.red.shade400,
+                  onPressed: () => _confirmDelete(context, event),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    // For in-person events that are past (no edit button)
+    else if (!event.isOnline && isPast) {
+      return Row(
+        children: [
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.people,
+              label: 'Attendance',
+              color: Colors.teal,
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AttendanceView(
+                      eventId: event.id,
+                      eventTitle: event.title,
+                      isOnline: event.isOnline,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.delete,
+              label: 'Delete',
+              color: Colors.red.shade400,
+              onPressed: () => _confirmDelete(context, event),
+            ),
+          ),
+        ],
+      );
+    }
+    // For online events or other cases
+    else {
+      return Row(
+        children: [
+          if (_isEventEditable(event)) ...[
+            Expanded(
+              child: _buildActionButton(
+                icon: Icons.edit,
+                label: 'Edit',
+                color: Colors.amber.shade700,
+                onPressed: () => _showCreateEditDialog(context, event: event),
+              ),
+            ),
+            SizedBox(width: 8),
+          ],
+          Expanded(
+            child: _buildActionButton(
+              icon: Icons.delete,
+              label: 'Delete',
+              color: Colors.red.shade400,
+              onPressed: () => _confirmDelete(context, event),
+            ),
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildPlaceholderImage() {
