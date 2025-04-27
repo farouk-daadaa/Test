@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'RouteView.dart'; // Import the new RouteView
 
 class EventDetailView extends StatefulWidget {
   final EventDTO event;
@@ -35,8 +38,9 @@ class _EventDetailViewState extends State<EventDetailView> {
   String? _userRole;
   String? _username;
   bool _isLoadingUserDetails = true;
-  LatLng? _eventLocation; // To store the geocoded location coordinates
+  LatLng? _eventLocation; // To store the geocoded event location
   bool _isLoadingLocation = false;
+  GoogleMapController? _mapController; // To control the map
 
   static const String _googleApiKey = 'AIzaSyCjUgGySYoos2UeHYmd6-MpIDLno2Sy2Ps';
 
@@ -57,6 +61,7 @@ class _EventDetailViewState extends State<EventDetailView> {
   @override
   void dispose() {
     _timer.cancel();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -135,6 +140,109 @@ class _EventDetailViewState extends State<EventDetailView> {
         SnackBar(content: Text('Could not load event location on map')),
       );
     }
+  }
+
+  Future<LatLng?> _getUserLocation() async {
+    // Check if location services are enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location services are disabled. Please enable them.'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              _navigateToRoutePage();
+            },
+          ),
+        ),
+      );
+      return null;
+    }
+
+    // Force recheck permissions every time
+    PermissionStatus permission = await Permission.locationWhenInUse.request();
+    if (permission.isDenied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location permissions are denied.'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              _navigateToRoutePage();
+            },
+          ),
+        ),
+      );
+      return null;
+    }
+
+    if (permission.isPermanentlyDenied) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Location permissions are permanently denied. Please enable them in settings.'),
+          action: SnackBarAction(
+            label: 'Open Settings',
+            onPressed: () async {
+              await openAppSettings();
+            },
+          ),
+        ),
+      );
+      return null;
+    }
+
+    // Get the current position using LocationSettings
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      ).timeout(Duration(seconds: 15), onTimeout: () {
+        throw Exception('Timed out while getting location');
+      });
+      debugPrint('Current position: ${position.latitude}, ${position.longitude}');
+      return LatLng(position.latitude, position.longitude);
+    } catch (e) {
+      debugPrint('Error getting user location: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not get your current location.'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              _navigateToRoutePage();
+            },
+          ),
+        ),
+      );
+      return null;
+    }
+  }
+
+  Future<void> _navigateToRoutePage() async {
+    if (_eventLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Event location not available.')),
+      );
+      return;
+    }
+
+    final currentLocation = await _getUserLocation();
+    if (currentLocation == null) {
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RouteView(
+          eventLocation: _eventLocation!,
+          userLocation: currentLocation,
+          googleApiKey: _googleApiKey,
+        ),
+      ),
+    );
   }
 
   Future<void> _handleRegister() async {
@@ -460,24 +568,48 @@ class _EventDetailViewState extends State<EventDetailView> {
                 if (_isLoadingLocation)
                   Center(child: CircularProgressIndicator())
                 else if (_eventLocation != null)
-                  SizedBox(
-                    height: 200,
-                    child: GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: _eventLocation!,
-                        zoom: 15,
-                      ),
-                      markers: {
-                        Marker(
-                          markerId: MarkerId('event_location'),
-                          position: _eventLocation!,
-                          infoWindow: InfoWindow(title: _event.title),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: _navigateToRoutePage,
+                          icon: Icon(Icons.directions, size: 18),
+                          label: Text("Show Route"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
                         ),
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                      zoomControlsEnabled: true,
-                    ),
+                      ),
+                      SizedBox(height: 8),
+                      SizedBox(
+                        height: 300,
+                        child: GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: _eventLocation!,
+                            zoom: 15,
+                          ),
+                          onMapCreated: (GoogleMapController controller) {
+                            _mapController = controller;
+                          },
+                          markers: {
+                            Marker(
+                              markerId: MarkerId('event_location'),
+                              position: _eventLocation!,
+                              infoWindow: InfoWindow(title: _event.title),
+                            ),
+                          },
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: true,
+                          zoomControlsEnabled: true,
+                        ),
+                      ),
+                    ],
                   )
                 else
                   Text(
@@ -500,28 +632,35 @@ class _EventDetailViewState extends State<EventDetailView> {
   }
 
   Widget _buildActionButton() {
-    if (_userRole == 'ADMIN' && _isDuringEvent) {
-      return ElevatedButton(
-        onPressed: _event.isOnline ? _handleJoin : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _event.isOnline ? Colors.blueAccent : Colors.grey,
-          padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
+    // For ADMIN users
+    if (_userRole == 'ADMIN') {
+      // Only show "Join" button for online events during the event
+      if (_event.isOnline && _isDuringEvent) {
+        return ElevatedButton(
+          onPressed: _handleJoin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blueAccent,
+            padding: EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            elevation: 5,
           ),
-          elevation: 5,
-        ),
-        child: Text(
-          "Join",
-          style: TextStyle(
-            fontSize: 18,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
+          child: Text(
+            "Join",
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-      );
+        );
+      }
+      // Return an empty container if no action is available
+      return Container();
     }
 
+    // For non-ADMIN users
     if (_userRole != 'ADMIN') {
       return ElevatedButton(
         onPressed: _event.isRegistered

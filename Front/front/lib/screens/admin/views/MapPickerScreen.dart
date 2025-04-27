@@ -16,7 +16,7 @@ class MapPickerScreen extends StatefulWidget {
   _MapPickerScreenState createState() => _MapPickerScreenState();
 }
 
-class _MapPickerScreenState extends State<MapPickerScreen> with SingleTickerProviderStateMixin {
+class _MapPickerScreenState extends State<MapPickerScreen> {
   GoogleMapController? _mapController;
   LatLng _selectedLocation = const LatLng(36.8065, 10.1815); // Default: Tunis, Tunisia
   String? _selectedAddress;
@@ -25,24 +25,15 @@ class _MapPickerScreenState extends State<MapPickerScreen> with SingleTickerProv
   bool _isSearching = false;
   static const String _googleApiKey = 'AIzaSyCjUgGySYoos2UeHYmd6-MpIDLno2Sy2Ps';
   final TextEditingController _searchController = TextEditingController();
-  late AnimationController _animationController;
-  late Animation<double> _fabAnimation;
 
   @override
   void initState() {
     super.initState();
-    // Initialize animation for FAB
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fabAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.repeat(reverse: true);
-    _getUserLocation();
+    // Prioritize initialAddress if provided
     if (widget.initialAddress != null && widget.initialAddress!.isNotEmpty) {
       _geocodeInitialAddress(widget.initialAddress!);
+    } else {
+      _getUserLocation();
     }
   }
 
@@ -50,7 +41,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> with SingleTickerProv
   void dispose() {
     _mapController?.dispose();
     _searchController.dispose();
-    _animationController.dispose();
     super.dispose();
   }
 
@@ -506,26 +496,23 @@ class _MapPickerScreenState extends State<MapPickerScreen> with SingleTickerProv
         ],
       ),
       floatingActionButton: !_isLoading
-          ? ScaleTransition(
-        scale: _fabAnimation,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FloatingActionButton(
-              onPressed: () => Navigator.pop(context),
-              backgroundColor: AppColors.textGray,
-              child: Icon(Icons.close, color: Colors.white),
-              tooltip: 'Cancel',
-            ),
-            SizedBox(width: 16),
-            FloatingActionButton(
-              onPressed: _confirmLocation,
-              backgroundColor: AppColors.primary,
-              child: Icon(Icons.check, color: Colors.white),
-              tooltip: 'Confirm Location',
-            ),
-          ],
-        ),
+          ? Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FloatingActionButton(
+            onPressed: () => Navigator.pop(context),
+            backgroundColor: AppColors.textGray,
+            child: Icon(Icons.close, color: Colors.white),
+            tooltip: 'Cancel',
+          ),
+          SizedBox(width: 16),
+          FloatingActionButton(
+            onPressed: _confirmLocation,
+            backgroundColor: AppColors.primary,
+            child: Icon(Icons.check, color: Colors.white),
+            tooltip: 'Confirm Location',
+          ),
+        ],
       )
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
