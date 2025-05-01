@@ -135,7 +135,7 @@ class EventService {
     debugPrint('EventService: Set token: $token');
   }
 
-  Future<List<EventDTO>> getEvents({int page = 0, int size = 10, String? status}) async {
+  Future<Map<String, dynamic>> getEvents({int page = 0, int size = 50, String? status}) async {
     try {
       debugPrint('EventService: Fetching events with headers: ${_dio.options.headers}');
       final response = await _dio.get(
@@ -152,15 +152,24 @@ class EventService {
             .map((json) => EventDTO.fromJson(json))
             .toList();
 
-        // Fetch the user's registered events to determine registration status
-        final registeredEvents = await getMyRegisteredEvents();
+        List<EventDTO> registeredEvents = [];
+        try {
+          registeredEvents = await getMyRegisteredEvents();
+        } catch (e) {
+          debugPrint('EventService: Failed to fetch registered events, using empty list: $e');
+        }
         final registeredEventIds = registeredEvents.map((event) => event.id).toSet();
 
         for (var event in events) {
           event.isRegistered = registeredEventIds.contains(event.id);
         }
 
-        return events;
+        return {
+          'events': events,
+          'totalPages': response.data['totalPages'] as int,
+          'totalElements': response.data['totalElements'] as int,
+          'pageNumber': response.data['number'] as int,
+        };
       }
       throw Exception('Failed to load events: ${response.statusCode}');
     } catch (e) {

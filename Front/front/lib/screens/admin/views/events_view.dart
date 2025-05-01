@@ -21,8 +21,12 @@ class EventsView extends StatefulWidget {
 class _EventsViewState extends State<EventsView> with SingleTickerProviderStateMixin {
   final EventService _eventService = EventService(baseUrl: 'http://192.168.1.13:8080');
   final HMSSDK _hmsSDK = HMSSDK();
-  Future<List<EventDTO>>? _eventsFuture;
+  List<EventDTO> _allEvents = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  int _currentPage = 0;
+  int _totalPages = 1;
+  late ScrollController _scrollController;
   late TabController _tabController;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -38,7 +42,12 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this); // Updated to 4 tabs (ALL, UPCOMING, ONGOING, PAST)
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      setState(() {});
+    });
+    _scrollController = ScrollController();
+    _scrollController.addListener(_scrollListener);
     _initializeEvents();
     _initializeHMSSDK();
   }
@@ -47,12 +56,11 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     await _hmsSDK.build();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _searchController.dispose();
-    _hmsSDK.destroy();
-    super.dispose();
+  void _scrollListener() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore && _currentPage < _totalPages - 1) {
+      _fetchMoreEvents();
+    }
   }
 
   Future<void> _initializeEvents() async {
@@ -64,10 +72,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     final token = await authService.getToken();
     if (token != null) {
       _eventService.setToken(token);
-      setState(() {
-        _eventsFuture = _eventService.getEvents();
-        _isLoading = false;
-      });
+      await _fetchEvents();
     } else {
       setState(() {
         _isLoading = false;
@@ -78,15 +83,89 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _fetchEvents() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _currentPage = 0;
+        _allEvents.clear();
+      });
+      final result = await _eventService.getEvents(page: _currentPage, size: 50);
+      setState(() {
+        _allEvents = result['events'] as List<EventDTO>;
+        _allEvents.sort((a, b) => b.startDateTime.compareTo(a.startDateTime));
+        _totalPages = result['totalPages'] as int;
+        debugPrint('Fetched initial page: ${_allEvents.length} events, totalPages: $_totalPages');
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error fetching events: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _fetchMoreEvents() async {
+    if (_isLoadingMore) return;
+    setState(() {
+      _isLoadingMore = true;
+    });
+    try {
+      final nextPage = _currentPage + 1;
+      final result = await _eventService.getEvents(page: nextPage, size: 50);
+      setState(() {
+        final newEvents = result['events'] as List<EventDTO>;
+        _allEvents.addAll(newEvents);
+        _allEvents.sort((a, b) => b.startDateTime.compareTo(a.startDateTime));
+        _currentPage = nextPage;
+        _totalPages = result['totalPages'] as int;
+        debugPrint('Fetched page $_currentPage: Added ${newEvents.length} events, total: ${_allEvents.length}');
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading more events: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
+  }
+
   Future<void> _refreshEvents() async {
-    setState(() {
-      _isLoading = true;
-      _eventsFuture = _eventService.getEvents();
-    });
-    await _eventsFuture;
-    setState(() {
-      _isLoading = false;
-    });
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Refreshing events...'),
+          duration: Duration(seconds: 1),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+      await _fetchEvents();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error refreshing events: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _resetFilters() {
@@ -110,59 +189,77 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   }
 
   List<EventDTO> _filterEvents(List<EventDTO> events) {
-    // First apply tab filter
     final now = DateTime.now();
+    debugPrint('Filtering events at: $now');
     List<EventDTO> filteredEvents = [];
 
     switch (_tabController.index) {
       case 0: // ALL
-        filteredEvents = events; // Show all events
+        filteredEvents = events;
         break;
       case 1: // Upcoming
-        filteredEvents = events.where((event) => now.isBefore(event.startDateTime)).toList();
+        filteredEvents = events.where((event) {
+          final isUpcoming = now.isBefore(event.startDateTime);
+          debugPrint('Event ${event.title}: Start=${event.startDateTime}, IsUpcoming=$isUpcoming');
+          return isUpcoming;
+        }).toList();
         break;
       case 2: // Ongoing
-        filteredEvents = events.where((event) =>
-        now.isAfter(event.startDateTime) && now.isBefore(event.endDateTime)
-        ).toList();
+        filteredEvents = events.where((event) {
+          final isOngoing = now.isAfter(event.startDateTime) && now.isBefore(event.endDateTime);
+          debugPrint('Event ${event.title}: Start=${event.startDateTime}, End=${event.endDateTime}, IsOngoing=$isOngoing');
+          return isOngoing;
+        }).toList();
         break;
       case 3: // Past
-        filteredEvents = events.where((event) => now.isAfter(event.endDateTime)).toList();
+        filteredEvents = events.where((event) {
+          final isPast = now.isAfter(event.endDateTime);
+          debugPrint('Event ${event.title}: End=${event.endDateTime}, IsPast=$isPast');
+          return isPast;
+        }).toList();
         break;
       default:
         filteredEvents = events;
     }
 
-    // Apply search query
     if (_searchQuery.isNotEmpty) {
-      filteredEvents = filteredEvents.where((event) =>
-          event.title.toLowerCase().contains(_searchQuery.toLowerCase())
-      ).toList();
+      debugPrint('Applying search query: $_searchQuery');
+      filteredEvents = filteredEvents.where((event) {
+        final matchesSearch = event.title.toLowerCase().contains(_searchQuery.toLowerCase());
+        debugPrint('Event ${event.title}: MatchesSearch=$matchesSearch');
+        return matchesSearch;
+      }).toList();
     }
 
-    // Apply online/in-person filter
     if (_filterOnline != null) {
-      filteredEvents = filteredEvents.where((event) =>
-      event.isOnline == _filterOnline
-      ).toList();
+      debugPrint('Applying online filter: $_filterOnline');
+      filteredEvents = filteredEvents.where((event) => event.isOnline == _filterOnline).toList();
     }
 
-    // Apply date range filter
     if (_startDateFilter != null) {
+      debugPrint('Applying start date filter: $_startDateFilter');
       filteredEvents = filteredEvents.where((event) =>
       event.startDateTime.isAfter(_startDateFilter!) ||
-          event.startDateTime.isAtSameMomentAs(_startDateFilter!)
-      ).toList();
+          event.startDateTime.isAtSameMomentAs(_startDateFilter!)).toList();
     }
 
     if (_endDateFilter != null) {
+      debugPrint('Applying end date filter: $_endDateFilter');
       filteredEvents = filteredEvents.where((event) =>
       event.startDateTime.isBefore(_endDateFilter!) ||
-          event.startDateTime.isAtSameMomentAs(_endDateFilter!)
-      ).toList();
+          event.startDateTime.isAtSameMomentAs(_endDateFilter!)).toList();
     }
 
     return filteredEvents;
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    _scrollController.dispose();
+    _hmsSDK.destroy();
+    super.dispose();
   }
 
   @override
@@ -260,14 +357,11 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                     fontSize: 14,
                   ),
                   tabs: [
-                    Tab(text: 'ALL'), // Added ALL tab
+                    Tab(text: 'ALL'),
                     Tab(text: 'UPCOMING'),
                     Tab(text: 'ONGOING'),
                     Tab(text: 'PAST'),
                   ],
-                  onTap: (index) {
-                    setState(() {});
-                  },
                 ),
               ),
             ],
@@ -283,7 +377,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           color: Colors.white,
         ),
       ),
-
       body: _buildEventsList(),
     );
   }
@@ -322,7 +415,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           SizedBox(height: 8),
           Row(
             children: [
-              // Date range filter
               Expanded(
                 child: GestureDetector(
                   onTap: () => _showDateRangePicker(),
@@ -355,7 +447,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                 ),
               ),
               SizedBox(width: 8),
-              // Event type filter
               Container(
                 decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey.shade300),
@@ -382,7 +473,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
       onTap: () {
         setState(() {
           if (_filterOnline == isOnline) {
-            _filterOnline = null; // Deselect if already selected
+            _filterOnline = null;
           } else {
             _filterOnline = isOnline;
           }
@@ -464,44 +555,39 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   }
 
   Widget _buildEventsList() {
-    return _eventsFuture == null
-        ? _buildEmptyState()
-        : FutureBuilder<List<EventDTO>>(
-      future: _eventsFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting || _isLoading) {
-          return _buildLoadingState();
-        } else if (snapshot.hasError) {
-          if (snapshot.error.toString().contains('Unauthorized')) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              Provider.of<AuthService>(context, listen: false).logout(context);
-              Navigator.of(context).pushReplacementNamed('/login');
-            });
-            return Center(child: Text('Redirecting to login...'));
+    if (_isLoading && _allEvents.isEmpty) {
+      return _buildLoadingState();
+    }
+
+    if (_allEvents.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    final filteredEvents = _filterEvents(_allEvents);
+
+    debugPrint('Filtered events: ${filteredEvents.length}');
+    filteredEvents.forEach((event) {
+      debugPrint('Filtered Event: ${event.title}, Start: ${event.startDateTime}, Status: ${event.status}');
+    });
+
+    if (filteredEvents.isEmpty) {
+      return _buildNoMatchingEventsState();
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshEvents,
+      color: AppColors.primary,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        itemCount: filteredEvents.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == filteredEvents.length && _isLoadingMore) {
+            return Center(child: CircularProgressIndicator());
           }
-          return _buildErrorState(snapshot.error.toString());
-        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return _buildNoEventsState();
-        }
-
-        final filteredEvents = _filterEvents(snapshot.data!);
-
-        if (filteredEvents.isEmpty) {
-          return _buildNoMatchingEventsState();
-        }
-
-        return RefreshIndicator(
-          onRefresh: _refreshEvents,
-          color: AppColors.primary,
-          child: ListView.builder(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            itemCount: filteredEvents.length,
-            itemBuilder: (context, index) {
-              return _buildEventCard(filteredEvents[index]);
-            },
-          ),
-        );
-      },
+          return _buildEventCard(filteredEvents[index]);
+        },
+      ),
     );
   }
 
@@ -646,7 +732,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
               ),
             ),
           ),
-
         ],
       ),
     );
@@ -706,7 +791,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
               ),
             ),
           ),
-
         ],
       ),
     );
@@ -751,10 +835,9 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
             ),
             child: Text(
               'Reset Filters',
-              style: TextStyle(color: Colors.white), // 👈 Add this line
+              style: TextStyle(color: Colors.white),
             ),
           ),
-
         ],
       ),
     );
@@ -780,7 +863,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
       statusText = 'Ended';
     }
 
-    // Calculate time difference for upcoming events
     String timeInfo = '';
     if (isUpcoming) {
       final difference = event.startDateTime.difference(now);
@@ -826,7 +908,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Event Image with Overlay
                 Stack(
                   children: [
                     Container(
@@ -840,7 +921,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                       )
                           : _buildPlaceholderImage(),
                     ),
-                    // Time info for upcoming events (only countdown)
                     if (timeInfo.isNotEmpty)
                       Positioned(
                         top: 16,
@@ -863,14 +943,11 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                       ),
                   ],
                 ),
-
-                // Event Details
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title
                       Text(
                         event.title,
                         style: TextStyle(
@@ -882,8 +959,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                         overflow: TextOverflow.ellipsis,
                       ),
                       SizedBox(height: 12),
-
-                      // Date and Time
                       Row(
                         children: [
                           Container(
@@ -923,8 +998,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                         ],
                       ),
                       SizedBox(height: 12),
-
-                      // Location (without meeting link)
                       Row(
                         children: [
                           Container(
@@ -955,8 +1028,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                           ),
                         ],
                       ),
-
-                      // Participants info
                       if (event.maxParticipants != null) ...[
                         SizedBox(height: 16),
                         Row(
@@ -1040,8 +1111,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                           ],
                         ),
                       ],
-
-                      // Action buttons
                       SizedBox(height: 20),
                       _buildActionButtonsRow(event, isPast),
                     ],
@@ -1055,13 +1124,10 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     );
   }
 
-  // Method to fix the overflow issue with action buttons
   Widget _buildActionButtonsRow(EventDTO event, bool isPast) {
-    // For in-person events that aren't past and have all buttons
     if (!event.isOnline && !isPast && _isEventEditable(event)) {
       return Column(
         children: [
-          // First row with Scan QR and Attendance
           Row(
             children: [
               Expanded(
@@ -1102,7 +1168,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
             ],
           ),
           SizedBox(height: 8),
-          // Second row with Edit and Delete
           Row(
             children: [
               Expanded(
@@ -1126,9 +1191,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           ),
         ],
       );
-    }
-    // For in-person events that are past (no edit button)
-    else if (!event.isOnline && isPast) {
+    } else if (!event.isOnline && isPast) {
       return Row(
         children: [
           Expanded(
@@ -1161,9 +1224,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           ),
         ],
       );
-    }
-    // For online events or other cases
-    else {
+    } else {
       return Row(
         children: [
           if (_isEventEditable(event)) ...[
@@ -1238,7 +1299,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
         onSave: (updatedEvent) async {
           try {
             if (event == null) {
-              // Create new event
               await _eventService.createEvent(updatedEvent);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1251,7 +1311,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                 ),
               );
             } else {
-              // Update existing event
               await _eventService.updateEvent(event.id, updatedEvent);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -1264,7 +1323,6 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                 ),
               );
             }
-            // Refresh events after successful operation
             await _refreshEvents();
           } catch (e) {
             ScaffoldMessenger.of(context).showSnackBar(
