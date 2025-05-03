@@ -18,7 +18,7 @@ class EventDTO {
   final int currentParticipants;
   final int? capacityLeft;
   final String status;
-  bool isRegistered; // Add this field to track registration status
+  bool isRegistered;
 
   EventDTO({
     required this.id,
@@ -210,16 +210,31 @@ class EventService {
     }
   }
 
-  Future<void> registerForEvent(int eventId) async {
+  Future<String> registerForEvent(int eventId) async {
     try {
       debugPrint('EventService: Registering for event $eventId');
       final response = await _dio.post('/api/events/$eventId/register');
       debugPrint('EventService: Register response: ${response.statusCode}, data: ${response.data}');
-      if (response.statusCode != 200) {
-        throw Exception('Failed to register for event: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        return response.data as String;
       }
+      throw Exception('Failed to register for event: ${response.statusCode}');
     } catch (e) {
       debugPrint('EventService: Error registering for event: $e');
+      throw _handleError(e);
+    }
+  }
+
+  Future<void> cancelRegistration(int eventId) async {
+    try {
+      debugPrint('EventService: Canceling registration for event $eventId');
+      final response = await _dio.delete('/api/events/$eventId/register');
+      debugPrint('EventService: Cancel registration response: ${response.statusCode}');
+      if (response.statusCode != 204) {
+        throw Exception('Failed to cancel registration: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('EventService: Error canceling registration: $e');
       throw _handleError(e);
     }
   }

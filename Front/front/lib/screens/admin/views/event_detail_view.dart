@@ -13,8 +13,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:front/constants/colors.dart' as app_colors;
+import 'package:qr_flutter/qr_flutter.dart';
 import 'RouteView.dart';
-
 
 class EventDetailView extends StatefulWidget {
   final EventDTO event;
@@ -48,8 +48,10 @@ class _EventDetailViewState extends State<EventDetailView>
   GoogleMapController? _mapController;
   bool _isRegistering = false;
   bool _isJoining = false;
+  bool _isCanceling = false;
   late TabController _tabController;
-  bool _showShareOptions = false;
+
+  String? _qrCodeData; // Store the Base64 QR code data
 
   // Theme colors for consistent design
   final Color primaryColor = app_colors.AppColors.primary;
@@ -67,7 +69,6 @@ class _EventDetailViewState extends State<EventDetailView>
     _initializeState();
   }
 
-  /// Initializes the state of the widget, setting up timers, tabs, and location.
   void _initializeState() {
     _updateCountdown();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -88,7 +89,6 @@ class _EventDetailViewState extends State<EventDetailView>
     super.dispose();
   }
 
-  /// Loads user details from AuthService and updates state.
   Future<void> _loadUserDetails() async {
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
@@ -106,7 +106,6 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Updates the countdown timer and event status.
   void _updateCountdown() {
     final now = DateTime.now();
     setState(() {
@@ -118,16 +117,8 @@ class _EventDetailViewState extends State<EventDetailView>
     });
   }
 
-  /// Formats the duration into a readable string (HH:MM:SS).
-  String _formatDuration(Duration duration) {
-    if (duration.isNegative) return "00:00:00";
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    return "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
-  }
 
-  /// Builds a status badge for the event (Upcoming, Live Now, Ended).
+
   Widget _buildEventStatusBadge() {
     if (_isEventEnded) {
       return _buildStatusBadge("Event Ended", Colors.red.shade600, Icons.event_busy);
@@ -146,7 +137,6 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Builds a styled status badge with text and icon.
   Widget _buildStatusBadge(String text, Color color, IconData icon) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -173,7 +163,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a countdown timer for upcoming events.
   Widget _buildCountdownTimer(Duration duration) {
     if (!_isUpcoming) return const SizedBox.shrink();
 
@@ -210,7 +199,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a separator for the countdown timer.
   Widget _buildTimeSeparator() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
@@ -225,7 +213,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a time box for the countdown timer.
   Widget _buildTimeBox(int value, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -264,7 +251,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Geocodes the event location to get LatLng coordinates.
   Future<void> _geocodeLocation(String address) async {
     setState(() {
       _isLoadingLocation = true;
@@ -298,10 +284,8 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Retrieves the user's current location with proper permission handling.
   Future<LatLng?> _getUserLocation() async {
     try {
-      // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         _showErrorSnackBar(
@@ -315,7 +299,6 @@ class _EventDetailViewState extends State<EventDetailView>
         return null;
       }
 
-      // Request location permission
       PermissionStatus permission = await Permission.locationWhenInUse.request();
       if (permission.isDenied) {
         _showErrorSnackBar(
@@ -343,7 +326,6 @@ class _EventDetailViewState extends State<EventDetailView>
         return null;
       }
 
-      // Get current position
       Position position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       ).timeout(const Duration(seconds: 15), onTimeout: () {
@@ -364,7 +346,6 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Navigates to the route page with user and event locations.
   Future<void> _navigateToRoutePage() async {
     if (_eventLocation == null) {
       _showErrorSnackBar('Event location not available.');
@@ -387,7 +368,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Handles event registration with proper state management.
   Future<void> _handleRegister() async {
     if (_isRegistering) return;
 
@@ -396,9 +376,10 @@ class _EventDetailViewState extends State<EventDetailView>
     });
 
     try {
-      await widget.eventService.registerForEvent(_event.id);
+      final qrCodeBase64 = await widget.eventService.registerForEvent(_event.id);
       setState(() {
         _event.isRegistered = true;
+        _qrCodeData = qrCodeBase64; // Store the Base64 QR code data
       });
       _showSuccessSnackBar('Successfully registered for the event');
     } catch (e) {
@@ -410,7 +391,29 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Handles joining an online event with proper state management.
+  Future<void> _handleCancel() async {
+    if (_isCanceling) return;
+
+    setState(() {
+      _isCanceling = true;
+    });
+
+    try {
+      await widget.eventService.cancelRegistration(_event.id);
+      setState(() {
+        _event.isRegistered = false;
+        _qrCodeData = null; // Clear the QR code data
+      });
+      _showSuccessSnackBar('Registration canceled successfully');
+    } catch (e) {
+      _showErrorSnackBar('Failed to cancel registration: $e');
+    } finally {
+      setState(() {
+        _isCanceling = false;
+      });
+    }
+  }
+
   Future<void> _handleJoin() async {
     if (_isJoining) return;
 
@@ -448,14 +451,8 @@ class _EventDetailViewState extends State<EventDetailView>
     }
   }
 
-  /// Toggles the visibility of share options.
-  void _toggleShareOptions() {
-    setState(() {
-      _showShareOptions = !_showShareOptions;
-    });
-  }
 
-  /// Displays a success snackbar with a message.
+
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -474,7 +471,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Displays an error snackbar with a message and optional action.
   void _showErrorSnackBar(String message, {SnackBarAction? action}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -494,18 +490,7 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Displays an info snackbar with a message.
-  void _showInfoSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.grey.shade600,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(12),
-      ),
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -523,7 +508,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the SliverAppBar with event image, title, and status.
   Widget _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 280.0,
@@ -534,7 +518,6 @@ class _EventDetailViewState extends State<EventDetailView>
         background: Stack(
           fit: StackFit.expand,
           children: [
-            // Event Image or Gradient Background
             Hero(
               tag: 'event_image_${_event.id}',
               child: _event.imageUrl != null && _event.imageUrl!.isNotEmpty
@@ -546,7 +529,6 @@ class _EventDetailViewState extends State<EventDetailView>
               )
                   : _buildGradientBackground(),
             ),
-            // Gradient Overlay
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -559,7 +541,6 @@ class _EventDetailViewState extends State<EventDetailView>
                 ),
               ),
             ),
-            // Event Status and Type Badge
             Positioned(
               top: MediaQuery.of(context).padding.top + 16,
               right: 16,
@@ -605,7 +586,6 @@ class _EventDetailViewState extends State<EventDetailView>
                 ],
               ),
             ),
-            // Event Title and Date
             Positioned(
               bottom: 16,
               left: 16,
@@ -696,7 +676,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the main event details section with status and tabs.
   Widget _buildEventDetails() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -708,7 +687,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the status section with countdown and attendee information.
   Widget _buildStatusSection() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -828,7 +806,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the tab section for Details and Location/Online tabs.
   Widget _buildTabSection() {
     return Column(
       children: [
@@ -871,7 +848,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the Details tab with event information.
   Widget _buildDetailsTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -933,12 +909,49 @@ class _EventDetailViewState extends State<EventDetailView>
               value: "Online Meeting",
             ),
           ],
+          if (!_event.isOnline &&
+              _userRole != "ADMIN" &&
+              _event.isRegistered &&
+              !_isEventEnded &&
+              _qrCodeData != null) ...[
+            const SizedBox(height: 24),
+            _buildSectionHeader("Your QR Code", Icons.qr_code),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    QrImageView(
+                      data: _qrCodeData!,
+                      version: QrVersions.auto,
+                      size: 150.0,
+                      backgroundColor: Colors.white,
+                      padding: const EdgeInsets.all(8),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Present this QR code at the event for check-in.",
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  /// Builds the Online tab with instructions and join information.
   Widget _buildOnlineTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1104,7 +1117,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the Location tab with a map and directions.
   Widget _buildLocationTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -1256,7 +1268,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a section header with an icon and title.
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
@@ -1278,7 +1289,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a detail card for event information.
   Widget _buildDetailCard({
     required IconData icon,
     required String title,
@@ -1343,7 +1353,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds the bottom action bar with Register/Join buttons.
   Widget _buildBottomActionBar() {
     if (_isEventEnded && !(_event.isRegistered && _userRole != 'ADMIN')) {
       return const SizedBox.shrink();
@@ -1368,21 +1377,24 @@ class _EventDetailViewState extends State<EventDetailView>
 
     return _buildActionButton(
       onPressed: _event.isRegistered
-          ? (_event.isOnline && _isDuringEvent && !_isJoining ? _handleJoin : null)
+          ? (_isCanceling ? null : _handleCancel)
           : (_isRegistering ? null : _handleRegister),
-      isLoading: _isRegistering || _isJoining,
+      isLoading: _isRegistering || _isJoining || _isCanceling,
       label: _event.isRegistered
-          ? (_event.isOnline && _isDuringEvent ? "Join Live Session" : "Registered")
+          ? "Cancel Registration"
           : "Register for Event",
       icon: _event.isRegistered
-          ? (_event.isOnline && _isDuringEvent ? Icons.videocam : Icons.check_circle)
+          ? Icons.cancel
           : Icons.event_available,
-      loadingLabel: _isRegistering ? "Registering..." : "Joining...",
-      disabled: _event.isRegistered && !(_event.isOnline && _isDuringEvent),
+      loadingLabel: _isRegistering
+          ? "Registering..."
+          : _isCanceling
+          ? "Canceling..."
+          : "Joining...",
+      disabled: false,
     );
   }
 
-  /// Builds a styled action button for the bottom bar.
   Widget _buildActionButton({
     required VoidCallback? onPressed,
     required bool isLoading,
@@ -1454,7 +1466,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Builds a gradient background for the app bar.
   Widget _buildGradientBackground() {
     return Container(
       decoration: BoxDecoration(
@@ -1470,7 +1481,6 @@ class _EventDetailViewState extends State<EventDetailView>
     );
   }
 
-  /// Formats the event date range for display.
   String _formatEventDate(DateTime start, DateTime end) {
     final bool sameDay = start.year == end.year &&
         start.month == end.month &&

@@ -16,11 +16,13 @@ import '../../services/auth_service.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
+import '../../services/event_service.dart'; // Import EventService
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/instructor_service.dart';
-import '../../services/notification_service.dart'; // Import NotificationService
+import '../../services/notification_service.dart';
 import '../../services/SessionService.dart';
+import '../admin/views/event_detail_view.dart';
 import '../instructor/views/LobbyScreen.dart';
 import 'bottom_nav_bar.dart';
 import 'categories_section.dart';
@@ -122,8 +124,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   final ImageService imageService = ImageService();
   final SessionService sessionService = SessionService(baseUrl: 'http://192.168.1.13:8080');
+  final EventService eventService = EventService(baseUrl: 'http://192.168.1.13:8080'); // Add EventService
   late AuthService _authService;
-  late NotificationService _notificationService; // Add this field to store NotificationService
+  late NotificationService _notificationService;
   List<Map<String, dynamic>> _enrolledCourses = [];
   List<CourseDTO> _popularCourses = [];
   List<CourseDTO> _featuredCourses = [];
@@ -131,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, Uint8List?> _instructorImages = {};
   List<Map<String, dynamic>> _categories = [];
   List<SessionDTO> _availableSessions = [];
+  List<EventDTO> _upcomingEvents = []; // Add list for upcoming events
   Map<int, String> _instructorNames = {};
 
   // Search-related variables (unchanged)
@@ -185,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
       enrollmentService.setToken(token);
       imageService.setToken(token);
       sessionService.setToken(token);
+      eventService.setToken(token); // Set token for EventService
       _authService = authService;
 
       // Set token for NotificationService
@@ -251,6 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _fetchTopInstructors(token, context),
       _fetchCategories(token),
       _fetchAvailableSessions(token),
+      _fetchUpcomingEvents(token), // Fetch upcoming events
     ]);
   }
 
@@ -385,7 +391,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final userId = await _authService.getUserIdByUsername(_authService.username ?? '');
       if (userId != null) {
-        // Fetch all sessions without status filter
         final sessions = await sessionService.getAvailableSessions(userId);
         print('Fetched ${sessions.length} sessions: ${sessions.map((s) => {
           'id': s.id,
@@ -395,7 +400,6 @@ class _HomeScreenState extends State<HomeScreen> {
           'status': s.status
         }).toList()}');
 
-        // Filter for LIVE sessions using the status field
         final liveSessions = sessions.where((session) {
           return session.status == 'LIVE';
         }).toList();
@@ -407,7 +411,6 @@ class _HomeScreenState extends State<HomeScreen> {
           'status': s.status
         }).toList()}');
 
-        // Fetch instructor names for live sessions
         for (var session in liveSessions) {
           if (session.instructorId != null && !_instructorNames.containsKey(session.instructorId)) {
             final profile = await instructorService.getInstructorProfile(session.instructorId!);
@@ -426,6 +429,26 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load live sessions: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _fetchUpcomingEvents(String token) async {
+    eventService.setToken(token);
+    try {
+      final response = await eventService.getEvents(status: 'UPCOMING');
+      final events = response['events'] as List<EventDTO>;
+      setState(() {
+        _upcomingEvents = events;
+      });
+      print('Fetched ${events.length} upcoming events');
+    } catch (e) {
+      print('Error fetching upcoming events: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load upcoming events: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -682,7 +705,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          // Home tab content
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -707,6 +729,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _buildPopularCourses(),
                           _buildTopInstructors(),
+                          _buildUpcomingEvents(), // Add Upcoming Events section
                           if (_enrolledCourses.any((data) =>
                           (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
                             Column(
@@ -725,7 +748,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          // Other tabs (My Courses, Bookmarks, Chat, Profile)
           _screens[1],
           _screens[2],
           _screens[3],
@@ -908,6 +930,207 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildUpcomingEvents() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Upcoming Events',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  // Optionally, navigate to a screen showing all events
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('All Events screen not implemented yet'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: Text(
+                  'See all',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 200,
+          child: _upcomingEvents.isEmpty
+              ? Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.event_busy,
+                    color: AppColors.textGray.withOpacity(0.7),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'No upcoming events',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AppColors.textGray,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _upcomingEvents.length,
+            itemBuilder: (context, index) {
+              final event = _upcomingEvents[index];
+              return GestureDetector(
+                onTap: () {
+                  final hmsSDK = HMSSDK();
+                  hmsSDK.build();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EventDetailView(
+                        event: event,
+                        eventService: eventService,
+                        hmsSDK: hmsSDK,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 260,
+                  margin: const EdgeInsets.only(right: 16),
+                  child: Card(
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(12),
+                            topRight: Radius.circular(12),
+                          ),
+                          child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                              ? Image.network(
+                            eventService.baseUrl + event.imageUrl!,
+                            height: 100,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              height: 100,
+                              color: AppColors.primary.withOpacity(0.1),
+                              child: const Icon(
+                                Icons.event,
+                                color: AppColors.primary,
+                                size: 40,
+                              ),
+                            ),
+                          )
+                              : Container(
+                            height: 100,
+                            color: AppColors.primary.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.event,
+                              color: AppColors.primary,
+                              size: 40,
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                event.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    size: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    event.getFormattedDate(),
+                                    style: TextStyle(
+                                      color: Colors.grey[800],
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    event.isOnline ? Icons.videocam : Icons.location_on,
+                                    size: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    event.isOnline ? 'Online' : (event.location ?? 'In-Person'),
+                                    style: TextStyle(
+                                      color: Colors.grey[800],
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -1129,7 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           )
               : _availableSessions.length == 1
-              ? _buildSingleSessionCard(_availableSessions[0]) // Single session: full-width card
+              ? _buildSingleSessionCard(_availableSessions[0])
               : SizedBox(
             height: 280,
             child: ListView.separated(
@@ -1141,9 +1364,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
                 print('Rendering Live Session (Horizontal): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
 
-                // Double-check the status before rendering
                 if (session.status != 'LIVE') {
-                  return const SizedBox.shrink(); // Skip non-LIVE sessions
+                  return const SizedBox.shrink();
                 }
 
                 return SizedBox(
@@ -1323,9 +1545,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
     print('Rendering Live Session (Single): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
 
-    // Double-check the status before rendering
     if (session.status != 'LIVE') {
-      return const SizedBox.shrink(); // Skip non-LIVE sessions
+      return const SizedBox.shrink();
     }
 
     return Card(
@@ -1354,7 +1575,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     session.title,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 18, // Larger font for title
+                      fontSize: 18,
                       color: Colors.black87,
                     ),
                     maxLines: 2,
@@ -1373,7 +1594,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Icon(
                         Icons.live_tv,
-                        size: 16, // Slightly larger icon
+                        size: 16,
                         color: Colors.red,
                       ),
                       const SizedBox(width: 4),
@@ -1382,7 +1603,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
-                          fontSize: 14, // Larger font for badge
+                          fontSize: 14,
                         ),
                       ),
                     ],
@@ -1392,7 +1613,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16), // More padding for larger card
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1401,7 +1622,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     session.description!,
                     style: TextStyle(
                       color: Colors.grey[700],
-                      fontSize: 14, // Larger font for description
+                      fontSize: 14,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -1412,7 +1633,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Icon(
                       Icons.calendar_today,
-                      size: 16, // Larger icon
+                      size: 16,
                       color: Colors.grey[600],
                     ),
                     const SizedBox(width: 8),
@@ -1421,7 +1642,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         color: Colors.grey[800],
                         fontWeight: FontWeight.w500,
-                        fontSize: 14, // Larger font
+                        fontSize: 14,
                       ),
                     ),
                   ],
@@ -1473,7 +1694,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () async {
                         await _joinSession(session);
                       },
-                      icon: const Icon(Icons.video_call, size: 18), // Larger icon
+                      icon: const Icon(Icons.video_call, size: 18),
                       label: const Text('Join Live'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.green,
@@ -1482,7 +1703,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 14), // Larger font
+                        textStyle: const TextStyle(fontSize: 14),
                       ),
                     ),
                   ],

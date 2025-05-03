@@ -264,6 +264,9 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final authService = Provider.of<AuthService>(context);
+    final bool isAdmin = authService.userRole == "ADMIN";
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Color(0xFFF8F9FA),
@@ -368,7 +371,8 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: isAdmin
+          ? FloatingActionButton(
         onPressed: () => _showCreateEditDialog(context),
         backgroundColor: AppColors.primary,
         elevation: 4,
@@ -376,7 +380,8 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           Icons.add,
           color: Colors.white,
         ),
-      ),
+      )
+          : null, // No FAB for students
       body: _buildEventsList(),
     );
   }
@@ -617,68 +622,10 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildErrorState(String error) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.error_outline,
-                size: 48,
-                color: Colors.red.shade400,
-              ),
-            ),
-            SizedBox(height: 24),
-            Text(
-              'Unable to load events',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              error,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
-            ),
-            SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _refreshEvents,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(
-                'Try Again',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
+    final authService = Provider.of<AuthService>(context);
+    final bool isAdmin = authService.userRole == "ADMIN";
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -708,7 +655,9 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              'Create your first event to get started',
+              isAdmin
+                  ? 'Create your first event to get started'
+                  : 'No events available at the moment',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.grey.shade600,
@@ -716,81 +665,24 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
               ),
             ),
           ),
-          SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () => _showCreateEditDialog(context),
-            icon: Icon(
-              Icons.add,
-              color: Colors.white,
-            ),
-            label: Text('Create Event'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          if (isAdmin) ...[
+            SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () => _showCreateEditDialog(context),
+              icon: Icon(
+                Icons.add,
+                color: Colors.white,
+              ),
+              label: Text('Create Event'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoEventsState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.event_note,
-              size: 60,
-              color: AppColors.primary,
-            ),
-          ),
-          SizedBox(height: 24),
-          Text(
-            'No Events Found',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade800,
-            ),
-          ),
-          SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              'Create your first event to get started',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          SizedBox(height: 32),
-          ElevatedButton.icon(
-            onPressed: () => _showCreateEditDialog(context),
-            icon: Icon(
-              Icons.add,
-              color: Colors.white,
-            ),
-            label: Text('Create Event'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -1112,7 +1004,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
                         ),
                       ],
                       SizedBox(height: 20),
-                      _buildActionButtonsRow(event, isPast),
+                      _buildActionButtonsRow(event, isPast, isOngoing),
                     ],
                   ),
                 ),
@@ -1124,7 +1016,18 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildActionButtonsRow(EventDTO event, bool isPast) {
+  Widget _buildActionButtonsRow(EventDTO event, bool isPast, bool isOngoing) {
+    final authService = Provider.of<AuthService>(context);
+    final bool isAdmin = authService.userRole == "ADMIN";
+
+    if (isAdmin) {
+      return _buildAdminActionButtonsRow(event, isPast);
+    } else {
+      return _buildStudentActionButtonsRow(event, isPast, isOngoing);
+    }
+  }
+
+  Widget _buildAdminActionButtonsRow(EventDTO event, bool isPast) {
     if (!event.isOnline && !isPast && _isEventEditable(event)) {
       return Column(
         children: [
@@ -1251,6 +1154,87 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     }
   }
 
+  Widget _buildStudentActionButtonsRow(EventDTO event, bool isPast, bool isOngoing) {
+    List<Widget> buttons = [];
+
+    // Register/Cancel button logic
+    if (!isPast && _isEventEditable(event)) {
+      buttons.add(
+        Expanded(
+          child: _buildActionButton(
+            icon: event.isRegistered ? Icons.cancel : Icons.event_available,
+            label: event.isRegistered ? 'Cancel' : 'Register',
+            color: event.isRegistered ? Colors.red.shade400 : Colors.green.shade600,
+            onPressed: event.capacityLeft != null && event.capacityLeft! <= 0 && !event.isRegistered
+                ? null // Disable if event is full and not registered
+                : () async {
+              try {
+                if (event.isRegistered) {
+                  await _eventService.cancelRegistration(event.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Registration canceled successfully'),
+                      backgroundColor: Colors.green.shade600,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  await _eventService.registerForEvent(event.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Registered successfully!'),
+                      backgroundColor: Colors.green.shade600,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                await _refreshEvents();
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: Colors.red.shade600,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      );
+    }
+
+    // Join button for online events
+    if (event.isOnline && (isOngoing || (isPast && event.isRegistered))) {
+      buttons.add(SizedBox(width: 8));
+      buttons.add(
+        Expanded(
+          child: _buildActionButton(
+            icon: Icons.videocam,
+            label: 'Join',
+            color: Colors.indigo,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EventDetailView(
+                    event: event,
+                    eventService: _eventService,
+                    hmsSDK: _hmsSDK,
+                  ),
+                ),
+              ).then((_) => _refreshEvents());
+            },
+          ),
+        ),
+      );
+    }
+
+    return buttons.isNotEmpty
+        ? Row(children: buttons)
+        : SizedBox.shrink(); // No buttons if none apply
+  }
+
   Widget _buildPlaceholderImage() {
     return Container(
       color: Colors.grey.shade200,
@@ -1268,7 +1252,7 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
     required IconData icon,
     required String label,
     required Color color,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
   }) {
     return ElevatedButton.icon(
       onPressed: onPressed,
@@ -1291,6 +1275,9 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   }
 
   void _showCreateEditDialog(BuildContext context, {EventDTO? event}) {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (authService.userRole != "ADMIN") return; // Only admins can create/edit events
+
     showDialog(
       context: context,
       builder: (dialogContext) => CreateEditEventDialog(
@@ -1339,6 +1326,9 @@ class _EventsViewState extends State<EventsView> with SingleTickerProviderStateM
   }
 
   void _confirmDelete(BuildContext context, EventDTO event) {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    if (authService.userRole != "ADMIN") return; // Only admins can delete events
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
