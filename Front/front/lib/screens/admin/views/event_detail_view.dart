@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:front/constants/colors.dart' as app_colors;
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter/scheduler.dart';
 import 'RouteView.dart';
 
 class EventDetailView extends StatefulWidget {
@@ -50,8 +51,8 @@ class _EventDetailViewState extends State<EventDetailView>
   bool _isJoining = false;
   bool _isCanceling = false;
   late TabController _tabController;
-
   String? _qrCodeData; // Store the Base64 QR code data
+  bool _hasShownQrError = false; // Track if QR error has been shown
 
   // Theme colors for consistent design
   final Color primaryColor = app_colors.AppColors.primary;
@@ -66,19 +67,23 @@ class _EventDetailViewState extends State<EventDetailView>
   void initState() {
     super.initState();
     _event = widget.event;
+    _tabController = TabController(length: 2, vsync: this); // Initialize here
     _initializeState();
   }
 
-  void _initializeState() {
+  void _initializeState() async {
     _updateCountdown();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _updateCountdown();
+      if (mounted) _updateCountdown(); // Only update if widget is mounted
     });
-    _loadUserDetails();
+    await _loadUserDetails();
+    // Load QR code data if the user is registered
+    if (_event.isRegistered) {
+      await _loadQrCodeData();
+    }
     if (!_event.isOnline && _event.location != null && _event.location!.isNotEmpty) {
       _geocodeLocation(_event.location!);
     }
-    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -86,6 +91,7 @@ class _EventDetailViewState extends State<EventDetailView>
     _timer.cancel();
     _mapController?.dispose();
     _tabController.dispose();
+    ScaffoldMessenger.of(context).clearSnackBars(); // Clear snackbars on dispose
     super.dispose();
   }
 
@@ -99,25 +105,47 @@ class _EventDetailViewState extends State<EventDetailView>
         _isLoadingUserDetails = false;
       });
     } catch (e) {
-      _showErrorSnackBar('Failed to load user details: $e');
+      if (mounted) {
+        _showErrorSnackBar('Failed to load user details: $e');
+        setState(() {
+          _isLoadingUserDetails = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadQrCodeData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final qrCode = prefs.getString('qr_code_${_event.id}');
+    if (qrCode != null) {
       setState(() {
-        _isLoadingUserDetails = false;
+        _qrCodeData = qrCode;
       });
     }
   }
 
-  void _updateCountdown() {
-    final now = DateTime.now();
-    setState(() {
-      _timeUntilEvent = _event.startDateTime.difference(now);
-      _isDuringEvent =
-          now.isAfter(_event.startDateTime) && now.isBefore(_event.endDateTime);
-      _isEventEnded = now.isAfter(_event.endDateTime);
-      _isUpcoming = now.isBefore(_event.startDateTime);
-    });
+  Future<void> _saveQrCodeData(String qrCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('qr_code_${_event.id}', qrCode);
   }
 
+  Future<void> _clearQrCodeData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('qr_code_${_event.id}');
+  }
 
+  void _updateCountdown() {
+    final now = DateTime.now();
+    if (mounted) {
+      setState(() {
+        _timeUntilEvent = _event.startDateTime.difference(now);
+        _isDuringEvent =
+            now.isAfter(_event.startDateTime) && now.isBefore(_event.endDateTime);
+        _isEventEnded = now.isAfter(_event.endDateTime);
+        _isUpcoming = now.isBefore(_event.startDateTime);
+      });
+    }
+  }
 
   Widget _buildEventStatusBadge() {
     if (_isEventEnded) {
@@ -277,10 +305,12 @@ class _EventDetailViewState extends State<EventDetailView>
         _isLoadingLocation = false;
       });
     } catch (e) {
-      _showErrorSnackBar('Could not load event location on map: $e');
-      setState(() {
-        _isLoadingLocation = false;
-      });
+      if (mounted) {
+        _showErrorSnackBar('Could not load event location on map: $e');
+        setState(() {
+          _isLoadingLocation = false;
+        });
+      }
     }
   }
 
@@ -288,41 +318,47 @@ class _EventDetailViewState extends State<EventDetailView>
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _showErrorSnackBar(
-          'Location services are disabled. Please enable them.',
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: _navigateToRoutePage,
-            textColor: Colors.white,
-          ),
-        );
+        if (mounted) {
+          _showErrorSnackBar(
+            'Location services are disabled. Please enable them.',
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _navigateToRoutePage,
+              textColor: Colors.white,
+            ),
+          );
+        }
         return null;
       }
 
       PermissionStatus permission = await Permission.locationWhenInUse.request();
       if (permission.isDenied) {
-        _showErrorSnackBar(
-          'Location permissions are denied.',
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: _navigateToRoutePage,
-            textColor: Colors.white,
-          ),
-        );
+        if (mounted) {
+          _showErrorSnackBar(
+            'Location permissions are denied.',
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: _navigateToRoutePage,
+              textColor: Colors.white,
+            ),
+          );
+        }
         return null;
       }
 
       if (permission.isPermanentlyDenied) {
-        _showErrorSnackBar(
-          'Location permissions are permanently denied. Please enable them in settings.',
-          action: SnackBarAction(
-            label: 'Open Settings',
-            onPressed: () async {
-              await openAppSettings();
-            },
-            textColor: Colors.white,
-          ),
-        );
+        if (mounted) {
+          _showErrorSnackBar(
+            'Location permissions are permanently denied. Please enable them in settings.',
+            action: SnackBarAction(
+              label: 'Open Settings',
+              onPressed: () async {
+                await openAppSettings();
+              },
+              textColor: Colors.white,
+            ),
+          );
+        }
         return null;
       }
 
@@ -334,38 +370,42 @@ class _EventDetailViewState extends State<EventDetailView>
 
       return LatLng(position.latitude, position.longitude);
     } catch (e) {
-      _showErrorSnackBar(
-        'Could not get your current location: $e',
-        action: SnackBarAction(
-          label: 'Retry',
-          onPressed: _navigateToRoutePage,
-          textColor: Colors.white,
-        ),
-      );
+      if (mounted) {
+        _showErrorSnackBar(
+          'Could not get your current location: $e',
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _navigateToRoutePage,
+            textColor: Colors.white,
+          ),
+        );
+      }
       return null;
     }
   }
 
   Future<void> _navigateToRoutePage() async {
     if (_eventLocation == null) {
-      _showErrorSnackBar('Event location not available.');
+      if (mounted) _showErrorSnackBar('Event location not available.');
       return;
     }
 
     final currentLocation = await _getUserLocation();
     if (currentLocation == null) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RouteView(
-          eventLocation: _eventLocation!,
-          userLocation: currentLocation,
-          googleApiKey: _googleApiKey,
-          isEventEnded: _isEventEnded,
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RouteView(
+            eventLocation: _eventLocation!,
+            userLocation: currentLocation,
+            googleApiKey: _googleApiKey,
+            isEventEnded: _isEventEnded,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   Future<void> _handleRegister() async {
@@ -377,17 +417,25 @@ class _EventDetailViewState extends State<EventDetailView>
 
     try {
       final qrCodeBase64 = await widget.eventService.registerForEvent(_event.id);
-      setState(() {
-        _event.isRegistered = true;
-        _qrCodeData = qrCodeBase64; // Store the Base64 QR code data
-      });
-      _showSuccessSnackBar('Successfully registered for the event');
+      if (mounted) {
+        setState(() {
+          _event.isRegistered = true;
+          _qrCodeData = qrCodeBase64; // Store the Base64 QR code data
+          _hasShownQrError = false; // Reset error flag on successful registration
+        });
+        await _saveQrCodeData(qrCodeBase64);
+        _showSuccessSnackBar('Successfully registered for the event');
+      }
     } catch (e) {
-      _showErrorSnackBar('Failed to register: $e');
+      if (mounted) {
+        _showErrorSnackBar('Failed to register: $e');
+      }
     } finally {
-      setState(() {
-        _isRegistering = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isRegistering = false;
+        });
+      }
     }
   }
 
@@ -400,17 +448,25 @@ class _EventDetailViewState extends State<EventDetailView>
 
     try {
       await widget.eventService.cancelRegistration(_event.id);
-      setState(() {
-        _event.isRegistered = false;
-        _qrCodeData = null; // Clear the QR code data
-      });
-      _showSuccessSnackBar('Registration canceled successfully');
+      if (mounted) {
+        setState(() {
+          _event.isRegistered = false;
+          _qrCodeData = null; // Clear the QR code data
+          _hasShownQrError = false; // Reset error flag on cancellation
+        });
+        await _clearQrCodeData();
+        _showSuccessSnackBar('Registration canceled successfully');
+      }
     } catch (e) {
-      _showErrorSnackBar('Failed to cancel registration: $e');
+      if (mounted) {
+        _showErrorSnackBar('Failed to cancel registration: $e');
+      }
     } finally {
-      setState(() {
-        _isCanceling = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isCanceling = false;
+        });
+      }
     }
   }
 
@@ -418,7 +474,7 @@ class _EventDetailViewState extends State<EventDetailView>
     if (_isJoining) return;
 
     if (_username == null) {
-      _showErrorSnackBar('Username not available. Please log in again.');
+      if (mounted) _showErrorSnackBar('Username not available. Please log in again.');
       return;
     }
 
@@ -431,66 +487,72 @@ class _EventDetailViewState extends State<EventDetailView>
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_role', _userRole!);
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LobbyScreen(
-            hmsSDK: widget.hmsSDK,
-            meetingToken: meetingDetails.meetingToken,
-            username: _username!,
-            sessionTitle: meetingDetails.title,
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LobbyScreen(
+              hmsSDK: widget.hmsSDK,
+              meetingToken: meetingDetails.meetingToken,
+              username: _username!,
+              sessionTitle: meetingDetails.title,
+            ),
           ),
-        ),
-      );
+        );
+      }
     } catch (e) {
-      _showErrorSnackBar('Failed to join: $e');
+      if (mounted) {
+        _showErrorSnackBar('Failed to join: $e');
+      }
     } finally {
-      setState(() {
-        _isJoining = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isJoining = false;
+        });
+      }
     }
   }
 
-
-
   void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text(message)),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green.shade600,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(12),
         ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.green.shade600,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(12),
-      ),
-    );
+      );
+    }
   }
 
   void _showErrorSnackBar(String message, {SnackBarAction? action}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(child: Text(message)),
-          ],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text(message)),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red.shade600,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(12),
+          action: action,
         ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.red.shade600,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(12),
-        action: action,
-      ),
-    );
+      );
+    }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -849,6 +911,49 @@ class _EventDetailViewState extends State<EventDetailView>
   }
 
   Widget _buildDetailsTab() {
+    // Decode the Base64 QR code data as an image
+    Widget? qrCodeWidget;
+    if (_qrCodeData != null && !_hasShownQrError) {
+      try {
+        final decodedBytes = base64Decode(_qrCodeData!);
+        qrCodeWidget = Image.memory(
+          decodedBytes,
+          width: 150.0,
+          height: 150.0,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            if (mounted && !_hasShownQrError) {
+              SchedulerBinding.instance.addPostFrameCallback((_) {
+                _showErrorSnackBar('Failed to display QR code image: $error');
+                setState(() {
+                  _hasShownQrError = true; // Prevent repeated error messages
+                });
+              });
+            }
+            return const Icon(
+              Icons.error,
+              color: Colors.red,
+              size: 50,
+            );
+          },
+        );
+      } catch (e) {
+        if (mounted && !_hasShownQrError) {
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            _showErrorSnackBar('Failed to decode QR code image: $e');
+            setState(() {
+              _hasShownQrError = true; // Prevent repeated error messages
+            });
+          });
+        }
+        qrCodeWidget = const Icon(
+          Icons.error,
+          color: Colors.red,
+          size: 50,
+        );
+      }
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -927,13 +1032,7 @@ class _EventDetailViewState extends State<EventDetailView>
               child: Center(
                 child: Column(
                   children: [
-                    QrImageView(
-                      data: _qrCodeData!,
-                      version: QrVersions.auto,
-                      size: 150.0,
-                      backgroundColor: Colors.white,
-                      padding: const EdgeInsets.all(8),
-                    ),
+                    qrCodeWidget ?? const SizedBox.shrink(),
                     const SizedBox(height: 12),
                     Text(
                       "Present this QR code at the event for check-in.",

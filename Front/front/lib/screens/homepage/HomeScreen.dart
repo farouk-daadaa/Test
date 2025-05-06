@@ -16,7 +16,7 @@ import '../../services/auth_service.dart';
 import '../../services/bookmark_service.dart';
 import '../../services/course_service.dart';
 import '../../services/enrollment_service.dart';
-import '../../services/event_service.dart'; // Import EventService
+import '../../services/event_service.dart';
 import '../../services/image_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/instructor_service.dart';
@@ -34,7 +34,6 @@ import 'views/popular_courses_screen.dart';
 import 'filter_screen.dart';
 import 'package:collection/collection.dart';
 
-// SearchResultsScreen (unchanged)
 class SearchResultsScreen extends StatelessWidget {
   final List<CourseDTO> searchResults;
   final CourseService courseService;
@@ -124,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final EnrollmentService enrollmentService = EnrollmentService(baseUrl: 'http://192.168.1.13:8080');
   final ImageService imageService = ImageService();
   final SessionService sessionService = SessionService(baseUrl: 'http://192.168.1.13:8080');
-  final EventService eventService = EventService(baseUrl: 'http://192.168.1.13:8080'); // Add EventService
+  final EventService eventService = EventService(baseUrl: 'http://192.168.1.13:8080');
   late AuthService _authService;
   late NotificationService _notificationService;
   List<Map<String, dynamic>> _enrolledCourses = [];
@@ -134,10 +133,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, Uint8List?> _instructorImages = {};
   List<Map<String, dynamic>> _categories = [];
   List<SessionDTO> _availableSessions = [];
-  List<EventDTO> _upcomingEvents = []; // Add list for upcoming events
+  List<EventDTO> _upcomingEvents = [];
   Map<int, String> _instructorNames = {};
+  final HMSSDK _hmsSDK = HMSSDK();
 
-  // Search-related variables (unchanged)
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   OverlayEntry? _overlayEntry;
@@ -146,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _searchContainerKey = GlobalKey();
 
   static final List<Widget> _screens = [
-    Container(), // Placeholder for the home content (will be built in the body)
+    Container(),
     const MyCoursesScreen(),
     const BookmarksScreen(),
     const ChatBotScreen(),
@@ -164,6 +163,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializeServices();
     _searchFocusNode.addListener(_onSearchFocusChanged);
     _searchController.addListener(_onSearchTextChanged);
+    _initializeHMSSDK();
+  }
+
+  Future<void> _initializeHMSSDK() async {
+    await _hmsSDK.build();
   }
 
   @override
@@ -172,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _searchFocusNode.dispose();
     _removeOverlay();
     _notificationService.disconnectWebSocket();
+    _hmsSDK.destroy();
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
@@ -183,34 +188,23 @@ class _HomeScreenState extends State<HomeScreen> {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
     if (token != null) {
-      // Set tokens for existing services
       courseService.setToken(token);
       bookmarkService.setToken(token);
       enrollmentService.setToken(token);
       imageService.setToken(token);
       sessionService.setToken(token);
-      eventService.setToken(token); // Set token for EventService
+      eventService.setToken(token);
       _authService = authService;
-
-      // Set token for NotificationService
       _notificationService.setToken(token);
-
-      // Reset the disposal state of NotificationService
       _notificationService.resetDisposalState();
-
-      // Fetch user ID for notifications
       final username = authService.username;
       if (username != null) {
         final userId = await authService.getUserIdByUsername(username);
         if (userId != null) {
-          // Fetch notifications
           try {
             await _notificationService.fetchNotifications(userId);
             await _notificationService.fetchUnreadNotifications(userId);
-            print('Notifications fetched: ${_notificationService.notifications.length}');
-            print('Unread notifications: ${_notificationService.unreadCount}');
           } catch (e) {
-            print('Error fetching notifications: $e');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to load notifications: $e'),
@@ -218,13 +212,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           }
-
-          // Initialize WebSocket for real-time notifications
           try {
             await _notificationService.initializeWebSocket(userId.toString(), token);
-            print('WebSocket initialized for user $userId');
           } catch (e) {
-            print('Error initializing WebSocket: $e');
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to connect to notifications: $e'),
@@ -232,17 +222,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           }
-        } else {
-          print('User ID not found for username: $username');
         }
-      } else {
-        print('Username not available');
       }
-
-      // Fetch other data
       await _refreshAllData(token);
-    } else {
-      print('Token not available');
     }
   }
 
@@ -256,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _fetchTopInstructors(token, context),
       _fetchCategories(token),
       _fetchAvailableSessions(token),
-      _fetchUpcomingEvents(token), // Fetch upcoming events
+      _fetchUpcomingEvents(token),
     ]);
   }
 
@@ -392,24 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final userId = await _authService.getUserIdByUsername(_authService.username ?? '');
       if (userId != null) {
         final sessions = await sessionService.getAvailableSessions(userId);
-        print('Fetched ${sessions.length} sessions: ${sessions.map((s) => {
-          'id': s.id,
-          'title': s.title,
-          'startTime': s.startTime.toIso8601String(),
-          'endTime': s.endTime.toIso8601String(),
-          'status': s.status
-        }).toList()}');
-
-        final liveSessions = sessions.where((session) {
-          return session.status == 'LIVE';
-        }).toList();
-        print('Filtered ${liveSessions.length} LIVE sessions: ${liveSessions.map((s) => {
-          'id': s.id,
-          'title': s.title,
-          'startTime': s.startTime.toIso8601String(),
-          'endTime': s.endTime.toIso8601String(),
-          'status': s.status
-        }).toList()}');
+        final liveSessions = sessions.where((session) => session.status == 'LIVE').toList();
 
         for (var session in liveSessions) {
           if (session.instructorId != null && !_instructorNames.containsKey(session.instructorId)) {
@@ -421,8 +386,6 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _availableSessions = liveSessions;
         });
-      } else {
-        throw Exception('User ID not found');
       }
     } catch (e) {
       print('Error fetching live sessions: $e');
@@ -510,10 +473,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       setState(() {
-        _suggestions = uniqueSuggestions
-            .where((suggestion) => suggestion.length <= 50)
-            .take(5)
-            .toList();
+        _suggestions = uniqueSuggestions.where((suggestion) => suggestion.length <= 50).take(5).toList();
       });
     }
     _showOverlay();
@@ -525,10 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final suggestionsToShow = query.isEmpty ? _recentSearches : _suggestions;
     if (suggestionsToShow.isEmpty && query.isEmpty && _recentSearches.isEmpty) return;
     final RenderBox? renderBox = _searchContainerKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) {
-      print('Search bar render box not found');
-      return;
-    }
+    if (renderBox == null) return;
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
     const double listTileHeight = 56.0;
@@ -729,7 +686,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _buildPopularCourses(),
                           _buildTopInstructors(),
-                          _buildUpcomingEvents(), // Add Upcoming Events section
                           if (_enrolledCourses.any((data) =>
                           (data['enrollment'] as EnrollmentDTO).progressPercentage < 100))
                             Column(
@@ -737,6 +693,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 _buildContinueLearning(),
                                 const SizedBox(height: 20),
                                 _buildLiveSessions(),
+                                const SizedBox(height: 20),
+                                _buildUpcomingEvents(),
                                 const SizedBox(height: 80),
                               ],
                             ),
@@ -933,6 +891,225 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _getFullImageUrl(String? relativeUrl) {
+    if (relativeUrl == null || relativeUrl.isEmpty) return '';
+    return '${eventService.baseUrl}$relativeUrl';
+  }
+
+  Widget _buildPlaceholderImage() {
+    return Container(
+      color: Colors.grey.shade200,
+      child: Center(
+        child: Icon(
+          Icons.event,
+          size: 64,
+          color: Colors.grey.shade400,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventCard(EventDTO event) {
+    final now = DateTime.now();
+    final isUpcoming = now.isBefore(event.startDateTime);
+    final isOngoing = now.isAfter(event.startDateTime) && now.isBefore(event.endDateTime);
+    final isPast = now.isAfter(event.endDateTime);
+
+    Color statusColor;
+    String statusText;
+
+    if (isUpcoming) {
+      statusColor = Colors.blue;
+      statusText = 'Upcoming';
+    } else if (isOngoing) {
+      statusColor = Colors.green;
+      statusText = 'Ongoing';
+    } else {
+      statusColor = Colors.grey;
+      statusText = 'Ended';
+    }
+
+    String timeInfo = '';
+    if (isUpcoming) {
+      final difference = event.startDateTime.difference(now);
+      if (difference.inDays > 0) {
+        timeInfo = 'In ${difference.inDays} day${difference.inDays > 1 ? 's' : ''}';
+      } else if (difference.inHours > 0) {
+        timeInfo = 'In ${difference.inHours} hour${difference.inHours > 1 ? 's' : ''}';
+      } else {
+        timeInfo = 'In ${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''}';
+      }
+    }
+
+    return Container(
+      margin: EdgeInsets.only(right: 16),
+      width: 260,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => EventDetailView(
+                    event: event,
+                    eventService: eventService,
+                    hmsSDK: _hmsSDK,
+                  ),
+                ),
+              );
+              final token = await _authService.getToken();
+              if (token != null) {
+                await _fetchUpcomingEvents(token);
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    Container(
+                      height: 100,
+                      width: double.infinity,
+                      child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                          ? Image.network(
+                        _getFullImageUrl(event.imageUrl),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => _buildPlaceholderImage(),
+                      )
+                          : _buildPlaceholderImage(),
+                    ),
+                    if (timeInfo.isNotEmpty)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            timeInfo,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.grey.shade900,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.calendar_today,
+                              size: 14,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                DateFormat('MMM d, yyyy').format(event.startDateTime),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                '${DateFormat('h:mm a').format(event.startDateTime)} - ${DateFormat('h:mm a').format(event.endDateTime)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Container(
+                            padding: EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: (event.isOnline ? Colors.indigo : Colors.amber).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              event.isOnline ? Icons.videocam : Icons.location_on,
+                              size: 14,
+                              color: event.isOnline ? Colors.indigo : Colors.amber.shade700,
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              event.isOnline
+                                  ? 'Online Event'
+                                  : (event.location ?? 'No location specified'),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildUpcomingEvents() {
     return Column(
       children: [
@@ -951,7 +1128,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               TextButton(
                 onPressed: () {
-                  // Optionally, navigate to a screen showing all events
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('All Events screen not implemented yet'),
@@ -971,7 +1147,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         SizedBox(
-          height: 200,
+          height: 260,
           child: _upcomingEvents.isEmpty
               ? Card(
             elevation: 2,
@@ -1001,133 +1177,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           )
-              : ListView.builder(
+              : SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _upcomingEvents.length,
-            itemBuilder: (context, index) {
-              final event = _upcomingEvents[index];
-              return GestureDetector(
-                onTap: () {
-                  final hmsSDK = HMSSDK();
-                  hmsSDK.build();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => EventDetailView(
-                        event: event,
-                        eventService: eventService,
-                        hmsSDK: hmsSDK,
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  width: 260,
-                  margin: const EdgeInsets.only(right: 16),
-                  child: Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(12),
-                            topRight: Radius.circular(12),
-                          ),
-                          child: event.imageUrl != null && event.imageUrl!.isNotEmpty
-                              ? Image.network(
-                            eventService.baseUrl + event.imageUrl!,
-                            height: 100,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              height: 100,
-                              color: AppColors.primary.withOpacity(0.1),
-                              child: const Icon(
-                                Icons.event,
-                                color: AppColors.primary,
-                                size: 40,
-                              ),
-                            ),
-                          )
-                              : Container(
-                            height: 100,
-                            color: AppColors.primary.withOpacity(0.1),
-                            child: const Icon(
-                              Icons.event,
-                              color: AppColors.primary,
-                              size: 40,
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                event.title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today,
-                                    size: 14,
-                                    color: Colors.grey[600],
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    event.getFormattedDate(),
-                                    style: TextStyle(
-                                      color: Colors.grey[800],
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Icon(
-                                    event.isOnline ? Icons.videocam : Icons.location_on,
-                                    size: 14,
-                                    color: Colors.grey[600],
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    event.isOnline ? 'Online' : (event.location ?? 'In-Person'),
-                                    style: TextStyle(
-                                      color: Colors.grey[800],
-                                      fontWeight: FontWeight.w500,
-                                      fontSize: 12,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
+            child: Row(
+              children: _upcomingEvents.map((event) {
+                return _buildEventCard(event);
+              }).toList(),
+            ),
           ),
         ),
       ],
@@ -1362,12 +1419,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (context, index) {
                 final session = _availableSessions[index];
                 final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
-                print('Rendering Live Session (Horizontal): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
-
-                if (session.status != 'LIVE') {
-                  return const SizedBox.shrink();
-                }
-
+                if (session.status != 'LIVE') return const SizedBox.shrink();
                 return SizedBox(
                   width: 260,
                   child: Card(
@@ -1543,12 +1595,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSingleSessionCard(SessionDTO session) {
     final instructorName = _instructorNames[session.instructorId] ?? 'Unknown';
-    print('Rendering Live Session (Single): ${session.title}, Start: ${session.startTime.toIso8601String()}, End: ${session.endTime.toIso8601String()}, Status: ${session.status}');
-
-    if (session.status != 'LIVE') {
-      return const SizedBox.shrink();
-    }
-
+    if (session.status != 'LIVE') return const SizedBox.shrink();
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -1627,8 +1674,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                if (session.description != null && session.description!.isNotEmpty)
-                  const SizedBox(height: 12),
+                if (session.description != null && session.description!.isNotEmpty) const SizedBox(height: 12),
                 Row(
                   children: [
                     Icon(
@@ -1745,9 +1791,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<List<CourseDTO>> _getCoursesWithToken() async {
     final authService = Provider.of<AuthService>(context, listen: false);
     final token = await authService.getToken();
-    if (token == null) {
-      throw Exception('User not authenticated');
-    }
+    if (token == null) throw Exception('User not authenticated');
     courseService.setToken(token);
     bookmarkService.setToken(token);
     final courses = await courseService.getAllCourses();
@@ -1810,7 +1854,6 @@ class _HomeScreenState extends State<HomeScreen> {
               final instructorId = instructor['id'] as int;
               return GestureDetector(
                 onTap: () {
-                  print('Navigating to profile for instructorId: $instructorId, name: $instructorName');
                   Navigator.push(
                     context,
                     MaterialPageRoute(
