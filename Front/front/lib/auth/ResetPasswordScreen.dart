@@ -53,9 +53,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         ? 'Password must contain:\n${requirements.map((r) => '• $r').join('\n')}'
         : null;
   }
+  @override
+  void initState() {
+    super.initState();
+    _isCodeValidated = false;
+    _isCodeInvalid = false;
+    _codeError = null;
+    _hasVibratedForCurrentAttempt = false;
+    _codeController.clear();
+    print('Initialized ResetPasswordScreen state');
+  }
 
   @override
   Widget build(BuildContext context) {
+    print('Building ResetPasswordScreen, _isCodeValidated: $_isCodeValidated, _isCodeInvalid: $_isCodeInvalid');
     final authService = Provider.of<AuthService>(context, listen: false);
 
     return Scaffold(
@@ -210,25 +221,77 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Future<void> _validateCode(AuthService authService) async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _isCodeValidated = false; // Reset state
+      _isCodeInvalid = false;
+      _codeError = null;
+      _hasVibratedForCurrentAttempt = false; // Reset vibration flag
+    });
+
     try {
       final isValid = await authService.validateResetCode(_codeController.text);
+      print('Code validation result for ${_codeController.text}: $isValid');
 
-      setState(() {
-        _isCodeValidated = isValid;
-        _isCodeInvalid = !isValid;
-        _codeError = isValid ? null : 'Invalid or expired reset code. Please request a new one.';
-      });
+      if (isValid) {
+        setState(() {
+          _isCodeValidated = true;
+          _isCodeInvalid = false;
+          _codeError = null;
+        });
+      } else {
+        setState(() {
+          _isCodeInvalid = true;
+          _codeError = 'Invalid or expired reset code. Please request a new one.';
+        });
 
-      if (!isValid) {
-        if (await Vibration.hasVibrator() ?? false) {
+        if (!(_hasVibratedForCurrentAttempt) && (await Vibration.hasVibrator() ?? false)) {
           Vibration.vibrate(duration: 500);
+          _hasVibratedForCurrentAttempt = true;
         }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Invalid reset code. Please request a new one.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        Future.delayed(Duration(seconds: 3), () {
+          if (mounted) {
+            print('Navigating to /forgot-password due to invalid code');
+            _codeController.clear();
+            Navigator.pushReplacementNamed(context, '/forgot-password');
+          }
+        });
       }
     } catch (e) {
+      print('Error in validateCode: $e');
       setState(() {
-        _codeError = 'Error validating reset code: ${e.toString()}';
         _isCodeInvalid = true;
+        _codeError = 'Error validating reset code: ${e.toString()}';
+      });
+
+      if (!(_hasVibratedForCurrentAttempt) && (await Vibration.hasVibrator() ?? false)) {
+        Vibration.vibrate(duration: 500);
+        _hasVibratedForCurrentAttempt = true;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error validating code. Please try again.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      Future.delayed(Duration(seconds: 3), () {
+        if (mounted) {
+          print('Navigating to /forgot-password due to error');
+          _codeController.clear();
+          Navigator.pushReplacementNamed(context, '/forgot-password');
+        }
       });
     } finally {
       setState(() => _isLoading = false);

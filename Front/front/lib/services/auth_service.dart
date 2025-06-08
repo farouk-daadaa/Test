@@ -264,8 +264,17 @@ class AuthService with ChangeNotifier {
         headers: {'Content-Type': 'application/json'},
       );
 
-      return response.statusCode == 200;
+      print('Validate reset code response for code $code: status=${response.statusCode}, body=${response.body}');
+
+      if (response.statusCode == 200) {
+        bool isValid = response.body.toLowerCase() == 'true';
+        print('Parsed isValid for code $code: $isValid');
+        return isValid;
+      } else {
+        throw Exception('Failed to validate reset code: ${response.statusCode}, body: ${response.body}');
+      }
     } catch (e) {
+      print('Error validating reset code $code: $e');
       await _handleNetworkError(e);
       rethrow;
     }
