@@ -8,6 +8,7 @@ import project.repository.PasswordResetTokenRepository;
 import project.repository.UserRepository;
 
 import javax.transaction.Transactional;
+import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 
@@ -36,25 +37,25 @@ public class PasswordResetService {
         }
 
         UserEntity user = optionalUser.get();
-
-        // FIX: Ensure transaction when deleting existing reset tokens
+        List<PasswordResetToken> existingTokens = tokenRepository.findByUser(user);
+        System.out.println("Existing tokens for user " + email + ": " + existingTokens.size());
         tokenRepository.deleteByUser(user);
+        System.out.println("Deleted existing tokens for user " + email);
 
-        // Generate new reset code
         String code = generateCode();
         PasswordResetToken passwordResetToken = new PasswordResetToken(code, user);
         tokenRepository.save(passwordResetToken);
+        System.out.println("Saved new token: " + code);
 
-        // Send email
         emailService.sendPasswordResetEmail(user.getEmail(), code);
     }
-
     // Step 2: Validate code
     public boolean isValidCode(String code) {
         PasswordResetToken resetToken = tokenRepository.findByToken(code);
-        return resetToken != null && !resetToken.isExpired();
+        boolean isValid = resetToken != null && !resetToken.isExpired();
+        System.out.println("Validating code: " + code + ", Token found: " + (resetToken != null) + ", Is valid: " + isValid);
+        return isValid;
     }
-
     @Transactional
     public void resetPassword(String code, String newPassword) {
         PasswordResetToken resetToken = tokenRepository.findByToken(code);
