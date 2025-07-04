@@ -209,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
         onPressed: () {
           Navigator.pushNamed(context, '/forgot-password');
         },
-        child: Center(
+
           child: Text(
             'Forgot Password?',
             style: TextStyle(
@@ -219,7 +219,7 @@ class _LoginScreenState extends State<LoginScreen> {
             textAlign: TextAlign.center,
           ),
         ),
-      ),
+
     );
   }
 

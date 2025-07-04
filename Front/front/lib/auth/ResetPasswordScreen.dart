@@ -71,9 +71,13 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Reset Password'),
+        title: Text(
+          'Reset Password',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Color(0xFFDB2777),
       ),
+
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
@@ -90,6 +94,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   SizedBox(height: 24),
                   TextFormField(
                     controller: _codeController,
+                    enabled: !_isCodeValidated,
                     decoration: InputDecoration(
                       labelText: 'Reset Code',
                       border: OutlineInputBorder(
